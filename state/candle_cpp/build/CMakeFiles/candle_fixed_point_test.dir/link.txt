@@ -1,0 +1,1 @@
+/etc/profiles/per-user/rexliu/bin/c++  -arch arm64 -Wl,-search_paths_first -Wl,-headerpad_max_install_names CMakeFiles/candle_fixed_point_test.dir/tests/fixed_point_test.cpp.o -o candle_fixed_point_test  libcandle_core.a lib/libgtest_main.a lib/libgtest.a
