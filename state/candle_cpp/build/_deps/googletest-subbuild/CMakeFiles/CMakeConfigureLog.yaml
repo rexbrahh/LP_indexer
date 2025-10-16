@@ -1,0 +1,127 @@
+
+---
+events:
+  -
+    kind: "find-v1"
+    backtrace:
+      - "/nix/store/h4wqh41ynxr4kpfhrz0k24l4mh1p5jy4-home-manager-path/share/cmake-4.1/Modules/CMakeDetermineSystem.cmake:12 (find_program)"
+      - "CMakeLists.txt:16 (project)"
+    mode: "program"
+    variable: "CMAKE_UNAME"
+    description: "Path to a program."
+    settings:
+      SearchFramework: "FIRST"
+      SearchAppBundle: "FIRST"
+      CMAKE_FIND_USE_CMAKE_PATH: true
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "uname"
+    candidate_directories:
+      - "/Users/rexliu/.nvm/versions/node/v24.8.0/bin/"
+      - "/Users/rexliu/.local/share/solana/install/active_release/bin/"
+      - "/Users/rexliu/.cargo/bin/"
+      - "/Users/rexliu/.nix-profile/bin/"
+      - "/etc/profiles/per-user/rexliu/bin/"
+      - "/run/current-system/sw/bin/"
+      - "/nix/var/nix/profiles/default/bin/"
+      - "/usr/local/bin/"
+      - "/usr/bin/"
+      - "/bin/"
+      - "/usr/sbin/"
+      - "/sbin/"
+      - "/Users/rexliu/.lmstudio/bin/"
+    searched_directories:
+      - "/Users/rexliu/.nvm/versions/node/v24.8.0/bin/uname"
+      - "/Users/rexliu/.local/share/solana/install/active_release/bin/uname"
+      - "/Users/rexliu/.cargo/bin/uname"
+      - "/Users/rexliu/.nix-profile/bin/uname"
+      - "/etc/profiles/per-user/rexliu/bin/uname"
+      - "/run/current-system/sw/bin/uname"
+      - "/nix/var/nix/profiles/default/bin/uname"
+      - "/usr/local/bin/uname"
+    found: "/usr/bin/uname"
+    search_context:
+      ENV{PATH}:
+        - "/Users/rexliu/.nvm/versions/node/v24.8.0/bin"
+        - "/Users/rexliu/.local/share/solana/install/active_release/bin"
+        - "/Users/rexliu/.cargo/bin"
+        - "/Users/rexliu/.nix-profile/bin"
+        - "/etc/profiles/per-user/rexliu/bin"
+        - "/run/current-system/sw/bin"
+        - "/nix/var/nix/profiles/default/bin"
+        - "/usr/local/bin"
+        - "/usr/bin"
+        - "/bin"
+        - "/usr/sbin"
+        - "/sbin"
+        - "/Users/rexliu/.lmstudio/bin"
+  -
+    kind: "message-v1"
+    backtrace:
+      - "/nix/store/h4wqh41ynxr4kpfhrz0k24l4mh1p5jy4-home-manager-path/share/cmake-4.1/Modules/CMakeDetermineSystem.cmake:212 (message)"
+      - "CMakeLists.txt:16 (project)"
+    message: |
+      The system is: Darwin - 25.1.0 - arm64
+  -
+    kind: "find-v1"
+    backtrace:
+      - "/nix/store/h4wqh41ynxr4kpfhrz0k24l4mh1p5jy4-home-manager-path/share/cmake-4.1/Modules/Platform/Darwin.cmake:76 (find_program)"
+      - "/nix/store/h4wqh41ynxr4kpfhrz0k24l4mh1p5jy4-home-manager-path/share/cmake-4.1/Modules/CMakeSystemSpecificInformation.cmake:32 (include)"
+      - "CMakeLists.txt:16 (project)"
+    mode: "program"
+    variable: "CMAKE_INSTALL_NAME_TOOL"
+    description: "Path to a program."
+    settings:
+      SearchFramework: "FIRST"
+      SearchAppBundle: "FIRST"
+      CMAKE_FIND_USE_CMAKE_PATH: true
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "install_name_tool"
+    candidate_directories:
+      - "/Users/rexliu/.nvm/versions/node/v24.8.0/bin/"
+      - "/Users/rexliu/.local/share/solana/install/active_release/bin/"
+      - "/Users/rexliu/.cargo/bin/"
+      - "/Users/rexliu/.nix-profile/bin/"
+      - "/etc/profiles/per-user/rexliu/bin/"
+      - "/run/current-system/sw/bin/"
+      - "/nix/var/nix/profiles/default/bin/"
+      - "/usr/local/bin/"
+      - "/usr/bin/"
+      - "/bin/"
+      - "/usr/sbin/"
+      - "/sbin/"
+      - "/Users/rexliu/.lmstudio/bin/"
+    searched_directories:
+      - "/Users/rexliu/.nvm/versions/node/v24.8.0/bin/install_name_tool"
+      - "/Users/rexliu/.local/share/solana/install/active_release/bin/install_name_tool"
+      - "/Users/rexliu/.cargo/bin/install_name_tool"
+      - "/Users/rexliu/.nix-profile/bin/install_name_tool"
+      - "/etc/profiles/per-user/rexliu/bin/install_name_tool"
+      - "/run/current-system/sw/bin/install_name_tool"
+      - "/nix/var/nix/profiles/default/bin/install_name_tool"
+      - "/usr/local/bin/install_name_tool"
+    found: "/usr/bin/install_name_tool"
+    search_context:
+      ENV{PATH}:
+        - "/Users/rexliu/.nvm/versions/node/v24.8.0/bin"
+        - "/Users/rexliu/.local/share/solana/install/active_release/bin"
+        - "/Users/rexliu/.cargo/bin"
+        - "/Users/rexliu/.nix-profile/bin"
+        - "/etc/profiles/per-user/rexliu/bin"
+        - "/run/current-system/sw/bin"
+        - "/nix/var/nix/profiles/default/bin"
+        - "/usr/local/bin"
+        - "/usr/bin"
+        - "/bin"
+        - "/usr/sbin"
+        - "/sbin"
+        - "/Users/rexliu/.lmstudio/bin"
+      CMAKE_INSTALL_PREFIX: "/usr/local"
+...

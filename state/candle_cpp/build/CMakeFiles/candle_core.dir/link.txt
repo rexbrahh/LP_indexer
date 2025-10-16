@@ -1,0 +1,2 @@
+/etc/profiles/per-user/rexliu/bin/ar qc libcandle_core.a CMakeFiles/candle_core.dir/src/candle_worker.cpp.o CMakeFiles/candle_core.dir/src/fixed_point.cpp.o
+/etc/profiles/per-user/rexliu/bin/ranlib libcandle_core.a
