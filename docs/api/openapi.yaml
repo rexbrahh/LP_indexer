@@ -1,0 +1,150 @@
+openapi: 3.1.0
+info:
+  title: LP Indexer HTTP API
+  version: 0.1.0
+  description: >-
+    Stub specification for the LP Indexer HTTP service exposing health, pool,
+    and candle endpoints.
+servers:
+  - url: http://localhost:8080
+paths:
+  /healthz:
+    get:
+      summary: Health check
+      operationId: getHealthz
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+  /v1/pool/{id}:
+    get:
+      summary: Fetch pool metadata
+      operationId: getPool
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Canonical pool identifier
+      responses:
+        '200':
+          description: Pool metadata stub
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PoolResponse'
+        '404':
+          description: Pool not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /v1/pool/{id}/candles:
+    get:
+      summary: Fetch pool candles
+      operationId: getPoolCandles
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Canonical pool identifier
+        - name: tf
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: ['1m', '5m', '1h', '1d']
+          description: Candle timeframe
+      responses:
+        '200':
+          description: Candle data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CandlesResponse'
+        '400':
+          description: Invalid timeframe
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Candles not in cache
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+components:
+  schemas:
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: ok
+        uptime:
+          type: string
+          example: 10s
+      required: [status, uptime]
+    PoolResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          example: SOL-USDC
+        name:
+          type: string
+          example: stub-pool
+        base_asset:
+          type: string
+          example: SOL
+        quote_asset:
+          type: string
+          example: USDC
+      required: [id, name, base_asset, quote_asset]
+    Candle:
+      type: object
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+        open:
+          type: number
+          format: double
+        high:
+          type: number
+          format: double
+        low:
+          type: number
+          format: double
+        close:
+          type: number
+          format: double
+        volume:
+          type: number
+          format: double
+      required: [timestamp, open, high, low, close, volume]
+    CandlesResponse:
+      type: object
+      properties:
+        pool_id:
+          type: string
+        timeframe:
+          type: string
+        candles:
+          type: array
+          items:
+            $ref: '#/components/schemas/Candle'
+      required: [pool_id, timeframe, candles]
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+      required: [error]
