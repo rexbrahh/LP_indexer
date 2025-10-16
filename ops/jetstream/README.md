@@ -71,6 +71,54 @@ nats stream add --config ops/jetstream/streams.dex.json
 nats consumer add DEX --config ops/jetstream/consumer.swaps.json
 ```
 
+Verify the stream and consumer exist:
+
+```bash
+make ops.jetstream.verify
+```
+
+This target checks that both the `DEX` stream and `SWAP_FIREHOSE` consumer are present, exiting with an error if either is missing. This is useful in CI/CD pipelines or post-deployment health checks.
+
+For detailed validation information including retention, replicas, and duplicate window:
+
+```bash
+./scripts/jetstream-validate.sh
+```
+
+Expected output:
+
+```
+==========================================
+JetStream Validation Report
+==========================================
+
+Stream: DEX
+----------------------------------------
+✓ Stream exists
+  Retention:        limits
+  Replicas:         3
+  Duplicate Window: 120000000000
+  Storage:          file
+  Messages:         0
+  Bytes:            0
+
+Consumer: SWAP_FIREHOSE
+----------------------------------------
+✓ Consumer exists
+  Ack Policy:       explicit
+  Deliver Policy:   new
+  Filter Subject:   dex.sol.*.swap
+  Max Deliver:      10
+  Max Ack Pending:  50000
+  Ack Pending:      0
+  Num Pending:      0
+  Redelivered:      0
+
+==========================================
+✓ All JetStream components validated
+==========================================
+```
+
 ## Operational Commands
 
 ### Streams
