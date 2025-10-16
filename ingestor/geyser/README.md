@@ -43,7 +43,7 @@ programs:
 ```go
 import (
     "log"
-    "github.com/yourusername/lp-indexer/ingestor/geyser"
+    "github.com/rexbrahh/lp-indexer/ingestor/geyser"
 )
 
 func main() {
@@ -146,7 +146,7 @@ These errors cause client shutdown:
 The Geyser client works with the `ingestor/common.SlotTimeCache` to maintain slot → timestamp mappings:
 
 ```go
-import "github.com/yourusername/lp-indexer/ingestor/common"
+import "github.com/rexbrahh/lp-indexer/ingestor/common"
 
 cache := common.NewMemorySlotTimeCache()
 
