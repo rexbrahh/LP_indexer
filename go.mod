@@ -23,6 +23,7 @@ require (
 	github.com/klauspost/compress v1.17.11 // indirect
 	github.com/pascaldekloe/name v1.0.1 // indirect
 	github.com/pierrec/lz4/v4 v4.1.22 // indirect
+	github.com/rpcpool/yellowstone-grpc/examples/golang v0.0.0-20251009080000-660797302ce2 // indirect
 	github.com/segmentio/asm v1.2.0 // indirect
 	go.opentelemetry.io/auto/sdk v1.1.0 // indirect
 	go.opentelemetry.io/otel v1.37.0 // indirect
