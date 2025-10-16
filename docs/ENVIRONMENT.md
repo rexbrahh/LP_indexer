@@ -12,6 +12,19 @@
 - Use `direnv` or `nix develop` (see `flake.nix`) for reproducible dev shells.
 
 ## Local Development
+
+### Using Nix (recommended)
+
+```bash
+# enter reproducible dev shell with Go, protoc, clang, nats-server, etc.
+nix develop
+
+# run the Go test suite (includes JetStream-backed integration tests)
+nix flake check
+```
+
+### Without Nix
+
 ```bash
 make up          # boots NATS, ClickHouse, MinIO, Postgres
 make down        # stops services
