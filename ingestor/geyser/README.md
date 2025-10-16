@@ -167,13 +167,19 @@ Run unit tests:
 go test ./ingestor/geyser/...
 ```
 
-Run with Chainstack demo credentials:
+Run the Geyser demo:
 
 ```bash
 export GEYSER_ENDPOINT="solana-mainnet.core.chainstack.com:443"
-export GEYSER_API_KEY="your-demo-key"
-go run cmd/geyser-demo/main.go
+export GEYSER_API_KEY="your-chainstack-api-key"
+go run ./cmd/ingestor/geyser-demo/main.go
 ```
+
+**Required Environment Variables:**
+- `GEYSER_ENDPOINT`: The Yellowstone gRPC endpoint (e.g., `solana-mainnet.core.chainstack.com:443`)
+- `GEYSER_API_KEY`: Your Chainstack API key for authentication
+
+The demo will connect to the Geyser endpoint, subscribe to slot updates and account changes for configured DEX programs, and log slot numbers to stdout.
 
 ## Performance Considerations
 
@@ -194,7 +200,6 @@ Key metrics to track:
 
 - Does not persist slot position to disk (in-memory only)
 - Replay window is fixed at 64 slots (not configurable per connection)
-- Uses insecure credentials for demo purposes (should add TLS for production)
 
 ## Future Enhancements
 
