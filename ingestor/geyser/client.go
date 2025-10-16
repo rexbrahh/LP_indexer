@@ -2,15 +2,16 @@ package geyser
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"io"
 	"log"
 	"time"
 
-	pb "github.com/rexbrahh/lp-indexer/ingestor/geyser/pb"
+	pb "github.com/rpcpool/yellowstone-grpc/examples/golang/proto"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/keepalive"
 )
 
 const (
@@ -19,6 +20,19 @@ const (
 	// ReconnectBackoff is the delay between reconnect attempts
 	ReconnectBackoff = 5 * time.Second
 )
+
+// tokenAuth implements PerRPCCredentials for x-token authentication
+type tokenAuth struct {
+	token string
+}
+
+func (t tokenAuth) GetRequestMetadata(ctx context.Context, in ...string) (map[string]string, error) {
+	return map[string]string{"x-token": t.token}, nil
+}
+
+func (tokenAuth) RequireTransportSecurity() bool {
+	return true
+}
 
 // Client wraps a Yellowstone Geyser gRPC connection with automatic reconnection
 type Client struct {
@@ -43,15 +57,19 @@ func NewClient(cfg *Config) (*Client, error) {
 	}, nil
 }
 
-// Connect establishes the gRPC connection to the Geyser endpoint
+// Connect establishes the gRPC connection to the Geyser endpoint with TLS
 func (c *Client) Connect() error {
-	// For demo purposes using insecure credentials
-	// In production, use proper TLS credentials
 	opts := []grpc.DialOption{
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{})),
+		grpc.WithKeepaliveParams(keepalive.ClientParameters{
+			Time:                10 * time.Second,
+			Timeout:             time.Second,
+			PermitWithoutStream: true,
+		}),
 		grpc.WithDefaultCallOptions(
-			grpc.MaxCallRecvMsgSize(128 * 1024 * 1024), // 128MB max message size
+			grpc.MaxCallRecvMsgSize(1024 * 1024 * 1024), // 1GB max message size
 		),
+		grpc.WithPerRPCCredentials(tokenAuth{token: c.cfg.APIKey}),
 	}
 
 	conn, err := grpc.DialContext(c.ctx, c.cfg.Endpoint, opts...) //nolint:staticcheck // DialContext remains viable for gRPC 1.x
@@ -99,10 +117,8 @@ func (c *Client) subscribeLoop(startSlot uint64, updateCh chan<- *pb.SubscribeUp
 		// Build subscription request
 		req := c.buildSubscribeRequest(replaySlot)
 
-		// Create subscription stream
-		md := metadata.Pairs("x-api-key", c.cfg.APIKey)
-		streamCtx := metadata.NewOutgoingContext(c.ctx, md)
-		stream, err := c.client.Subscribe(streamCtx)
+		// Create subscription stream (authentication is handled by PerRPCCredentials)
+		stream, err := c.client.Subscribe(c.ctx)
 		if err != nil {
 			log.Printf("Failed to create subscription: %v", err)
 			errCh <- fmt.Errorf("subscribe failed: %w", err)
@@ -158,6 +174,8 @@ func (c *Client) buildSubscribeRequest(startSlot uint64) *pb.SubscribeRequest {
 		}
 	}
 
+	commitment := pb.CommitmentLevel_CONFIRMED
+
 	return &pb.SubscribeRequest{
 		Slots: map[string]*pb.SubscribeRequestFilterSlots{
 			"client": {},
@@ -171,7 +189,8 @@ func (c *Client) buildSubscribeRequest(startSlot uint64) *pb.SubscribeRequest {
 			"client": {},
 		},
 		AccountsDataSlice: []*pb.SubscribeRequestAccountsDataSlice{},
-		Commitment:        pb.CommitmentLevel_CONFIRMED,
+		Commitment:        &commitment,
+		FromSlot:          &startSlot,
 	}
 }
 

@@ -17,6 +17,11 @@ void CandleWindow::update(uint64_t timestamp, FixedPrice price,
 
     std::lock_guard<std::mutex> lock(mutex);
 
+    // Update watermark
+    if (timestamp > last_trade_time) {
+        last_trade_time = timestamp;
+    }
+
     auto it = candles.find(window_start);
     if (it == candles.end()) {
         // Create new candle
@@ -30,6 +35,7 @@ void CandleWindow::update(uint64_t timestamp, FixedPrice price,
         new_candle.volume = base_amount;
         new_candle.quote_volume = quote_amount;
         new_candle.trades = 1;
+        new_candle.provisional = true;
 
         candles[window_start] = new_candle;
     } else {
@@ -57,6 +63,29 @@ void CandleWindow::update(uint64_t timestamp, FixedPrice price,
 uint64_t CandleWindow::get_window_start(uint64_t timestamp) const {
     uint32_t window_seconds = static_cast<uint32_t>(window_size);
     return (timestamp / window_seconds) * window_seconds;
+}
+
+std::vector<Candle> CandleWindow::finalize_old_candles(uint64_t watermark) {
+    std::lock_guard<std::mutex> lock(mutex);
+    std::vector<Candle> finalized;
+
+    // Find all candles whose close_time is before the watermark
+    auto it = candles.begin();
+    while (it != candles.end()) {
+        Candle& candle = it->second;
+
+        // Finalize if window has closed and candle is still provisional
+        if (candle.close_time <= watermark && candle.provisional) {
+            candle.provisional = false;
+            finalized.push_back(candle);
+            // Remove the finalized candle to free memory
+            it = candles.erase(it);
+        } else {
+            ++it;
+        }
+    }
+
+    return finalized;
 }
 
 // ============================================================================
@@ -127,8 +156,9 @@ void CandleWorker::start() {
         return; // Already running
     }
 
-    // TODO: Initialize worker thread pool for processing queued trades
-    // For now, processing is synchronous in on_trade()
+    // Start timing wheel for finalization
+    finalize_thread_ = std::thread([this]() { finalize_loop(); });
+
     std::cout << "CandleWorker started with " << num_shards_ << " shards\n";
 }
 
@@ -138,7 +168,12 @@ void CandleWorker::stop() {
         return; // Already stopped
     }
 
-    // TODO: Shutdown worker threads gracefully
+    // Stop timing wheel
+    if (finalize_thread_.joinable()) {
+        finalize_thread_.join();
+    }
+
+    // Shutdown worker threads gracefully
     for (auto& thread : worker_threads_) {
         if (thread.joinable()) {
             thread.join();
@@ -166,9 +201,11 @@ void CandleWorker::on_trade(const std::string& pair_id, uint64_t timestamp,
 
 void CandleWorker::emit_candle(const std::string& pair_id,
                                WindowSize window_size, const Candle& candle) {
-    // STUB: Provisional emit - no NATS integration yet
-    // This will be called when we detect a window has closed
-    // For now, just log to stdout for debugging
+    // Enqueue to in-memory sink for now (provisional)
+    {
+        std::lock_guard<std::mutex> lock(emitted_mutex_);
+        emitted_candles_.push_back(candle);
+    }
 
     std::cout << "[EMIT] pair=" << pair_id
               << " window=" << static_cast<uint32_t>(window_size)
@@ -181,6 +218,7 @@ void CandleWorker::emit_candle(const std::string& pair_id,
               << " volume=" << candle.volume
               << " quote_volume=" << candle.quote_volume
               << " trades=" << candle.trades
+              << " provisional=" << candle.provisional
               << "\n";
 
     // TODO: Serialize candle to protobuf and publish to NATS JetStream
@@ -200,6 +238,54 @@ uint32_t CandleWorker::hash_pair_id(const std::string& pair_id) const {
         hash *= 16777619u;
     }
     return hash;
+}
+
+std::vector<Candle> CandleWorker::get_emitted_candles() const {
+    std::lock_guard<std::mutex> lock(emitted_mutex_);
+    return emitted_candles_;
+}
+
+void CandleWorker::finalize_loop() {
+    // Timing wheel: periodically check for candles to finalize
+    // For 1m windows, check every 1 second
+    while (running_) {
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+
+        // Get current time as watermark
+        auto now = std::chrono::system_clock::now();
+        uint64_t watermark = std::chrono::duration_cast<std::chrono::seconds>(
+            now.time_since_epoch()).count();
+
+        // Iterate through all shards and windows to finalize old candles
+        for (auto& shard : shards_) {
+            std::lock_guard<std::mutex> shard_lock(shard->mutex);
+
+            for (auto& [pair_id, windows] : shard->windows) {
+                for (auto& window : windows) {
+                    // Check if this window has a last_trade_time
+                    // Only finalize windows where no new trades arrive
+                    uint64_t last_trade = 0;
+                    {
+                        std::lock_guard<std::mutex> win_lock(window->mutex);
+                        last_trade = window->last_trade_time;
+                    }
+
+                    // If no trades yet, skip
+                    if (last_trade == 0) {
+                        continue;
+                    }
+
+                    // Finalize candles that closed before the watermark
+                    auto finalized = window->finalize_old_candles(watermark);
+
+                    // Emit finalized candles
+                    for (const auto& candle : finalized) {
+                        emit_candle(pair_id, window->window_size, candle);
+                    }
+                }
+            }
+        }
+    }
 }
 
 } // namespace candle

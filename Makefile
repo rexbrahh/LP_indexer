@@ -1,4 +1,4 @@
-.PHONY: help bootstrap proto-gen test lint build clean up down ops.jetstream.init
+.PHONY: help bootstrap proto-gen test lint build clean up down ops.jetstream.init ops.jetstream.verify
 
 # Default target
 help:
@@ -14,6 +14,7 @@ help:
 	@echo "  up                 - Start local dependencies (NATS, ClickHouse, etc.)"
 	@echo "  down               - Stop local dependencies"
 	@echo "  ops.jetstream.init - Initialize JetStream streams and consumers"
+	@echo "  ops.jetstream.verify - Verify JetStream streams and consumers exist"
 
 # Bootstrap development environment
 bootstrap:
@@ -76,3 +77,11 @@ ops.jetstream.init:
 	@nats stream add --config ops/jetstream/streams.dex.json || echo "Stream DEX may already exist"
 	@nats consumer add DEX --config ops/jetstream/consumer.swaps.json || echo "Consumer SWAP_FIREHOSE may already exist"
 	@echo "✓ JetStream initialization complete!"
+
+# Verify JetStream streams and consumers
+ops.jetstream.verify:
+	@echo "Verifying JetStream streams and consumers..."
+	@command -v nats >/dev/null 2>&1 || { echo "ERROR: nats CLI not found. Install with: brew install nats-io/nats-tools/nats"; exit 1; }
+	@nats stream info DEX >/dev/null 2>&1 || { echo "ERROR: Stream DEX does not exist"; exit 1; }
+	@nats consumer info DEX SWAP_FIREHOSE >/dev/null 2>&1 || { echo "ERROR: Consumer SWAP_FIREHOSE does not exist"; exit 1; }
+	@echo "✓ JetStream verification complete!"
