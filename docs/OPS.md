@@ -13,6 +13,10 @@
 - Run Substreams command (see `docs/BACKFILL.md`).
 - Track checkpoints and throughput; ensure sink keeps up before widening slot ranges.
 
+## Cutover
+- Follow the detailed steps in `docs/CUTOVER.md` (bootstrap → dark launch → shadow compare → flip → retire).
+- Before switching consumers, confirm `make ops.jetstream.verify` succeeds and parity metrics are within tolerance.
+
 ## Alerting
 - JetStream lag (`ack_pending`, `num_pending`), decode errors, candle finalize latency.
 - Use Grafana dashboards under `ops/dashboards/` (to be populated).
