@@ -75,8 +75,40 @@ struct Candle {
     FixedPrice volume;        // Total base token volume (Q32.32)
     FixedPrice quote_volume;  // Total quote token volume (Q32.32)
     uint32_t trades;          // Number of trades in window
+    bool provisional;         // True if window hasn't been finalized yet
 };
 ```
+
+## Candle Finalization & Watermark Behavior
+
+### Provisional vs Finalized Candles
+
+All candles start as **provisional** (`provisional = true`) when first created. They transition to **finalized** (`provisional = false`) when:
+
+1. The candle's `close_time` has passed (window is closed)
+2. A background timing wheel detects the window closure
+3. The candle is emitted to the sink and removed from memory
+
+### Watermark Tracking
+
+Each `CandleWindow` maintains a `last_trade_time` watermark:
+
+- **Updated on every trade:** `last_trade_time = max(last_trade_time, current_timestamp)`
+- **Used for finalization:** Candles whose `close_time <= current_watermark` are eligible for finalization
+- **Background thread:** A timing wheel runs every 1 second to check for candles ready to finalize
+
+**Finalization Process:**
+1. Timing wheel wakes up every 1 second
+2. For each shard → pair → window:
+   - Get all candles where `close_time <= watermark`
+   - Flip `provisional` flag to `false`
+   - Emit candle via `emit_candle()`
+   - Remove from `candles` map to free memory
+
+**Benefits:**
+- Ensures 1m windows finalize within 1 second of closure
+- Prevents unbounded memory growth from old candles
+- Emitted candles have deterministic finalization semantics
 
 ## Threading & Concurrency Model
 
@@ -90,10 +122,18 @@ struct Candle {
   3. Gets or creates 6 CandleWindow objects for the pair
   4. Releases shard mutex
   5. For each window: acquires window mutex, updates candle, releases mutex
+  6. Updates `last_trade_time` watermark
+
+**Timing Wheel (Finalization Thread):**
+- Background thread runs `finalize_loop()` every 1 second
+- Iterates through all shards/pairs/windows
+- Calls `finalize_old_candles(watermark)` to finalize closed windows
+- Emits finalized candles to in-memory sink (provisional: will be NATS later)
 
 **Lock Granularity:**
 - **Shard-level mutex:** Protects the `windows` map during pair lookup/creation
-- **Window-level mutex:** Protects individual `candles` map during updates
+- **Window-level mutex:** Protects individual `candles` map during updates and finalization
+- **Emitted candles mutex:** Protects the in-memory sink for emitted candles
 - Minimizes contention: different pairs in same shard can update windows in parallel after initial lookup
 
 ### Planned Implementation (Phase 2)
