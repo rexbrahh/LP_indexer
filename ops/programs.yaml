@@ -1,0 +1,21 @@
+# Solana Program IDs for DEX filtering
+# These program IDs are used by the Geyser ingestor to filter relevant on-chain events
+
+programs:
+  # Raydium AMM v4 - Automated Market Maker for token swaps
+  raydium_amm: 675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8
+
+  # Raydium Liquidity Pool v4
+  raydium_liquidity: 5quBtoiQqxF9Jv6KYKctB59NT3gtJD2Y65kdnB1Uev3h
+
+  # Orca Whirlpools - Concentrated liquidity AMM
+  orca_whirlpool: whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc
+
+  # Orca Legacy (deprecated, but may still have historical data)
+  orca_legacy: 9W959DqEETiGZocYWCQPaJ6sBmUzgfxXfqGeTEdp3aQP
+
+  # Meteora Pools - Dynamic AMM with multiple pool types
+  meteora_pools: LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo
+
+  # Meteora DLMM (Dynamic Liquidity Market Maker)
+  meteora_dlmm: Eo7WjKq67rjJQSZxS6z3YkapzY3eMj6Xy8X5EQVn5UaB
