@@ -10,6 +10,7 @@ compile_commands.json
 # Go
 go.sum
 generated/
+gen/
 **/*.pb.go
 **/*.pb.cc
 **/*.pb.h
@@ -27,5 +28,4 @@ result
 .idea/
 .vscode/
 .DS_Store
-
 

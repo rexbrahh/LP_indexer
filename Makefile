@@ -1,5 +1,8 @@
 .PHONY: help bootstrap proto-gen test lint build clean up down ops.jetstream.init ops.jetstream.verify
 
+PROTO_FILES := $(shell find proto -name '*.proto' 2>/dev/null)
+GOBIN := $(shell go env GOPATH)/bin
+
 # Default target
 help:
 	@echo "Solana Liquidity Indexer - Makefile"
@@ -22,13 +25,25 @@ bootstrap:
 	go mod download
 	go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
 	go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
+	@command -v protoc >/dev/null 2>&1 || { echo "WARNING: protoc not found on PATH. Install from https://github.com/protocolbuffers/protobuf/releases"; }
 	@echo "Bootstrap complete"
 
 # Generate protobuf code (if proto directory exists)
 proto-gen:
-	@if [ -f buf.yaml ] && [ -d proto ]; then \
+	@if [ -d proto ]; then \
+		if [ -z "$(PROTO_FILES)" ]; then \
+			echo "No protobuf files found under proto/"; \
+			exit 0; \
+		fi; \
+		command -v protoc >/dev/null 2>&1 || { echo "ERROR: protoc not found. Run 'make bootstrap' to install prerequisites."; exit 1; }; \
 		echo "Generating protobuf code..."; \
-		buf generate; \
+		mkdir -p gen/go gen/cpp; \
+		PATH="$$PATH:$(GOBIN)" protoc -I proto \
+			--go_out=gen/go --go_opt=paths=source_relative \
+			--go-grpc_out=gen/go --go-grpc_opt=paths=source_relative \
+			--cpp_out=gen/cpp \
+			$(PROTO_FILES); \
+		echo "Protobuf generation complete"; \
 	else \
 		echo "No protobuf definitions found"; \
 	fi

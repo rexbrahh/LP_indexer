@@ -13,29 +13,29 @@
 - **Shared:** `decoder/common` for mint metadata, canonical pair resolver, fixed-point tests.
 
 ## State compute (`/state`)
-- **candle_cpp/** – C++20 engine; sharded window store, timing wheel finalizer, provisional flag handling.
-- **price_cpp/** – Fixed-point helpers, u128 math (future). 
-- Emits `dex.sol.candle.pool.*` and `dex.sol.candle.pair.*` subjects via NATS (stubbed now).
+- **candle_cpp/** – C++20 engine; sharded window store, timing wheel finalizer, provisional flag handling, pluggable publisher API (defaults to in-memory; JetStream wiring pending).
+- **price_cpp/** – Fixed-point helpers, u128 math (future).
+- Emits `dex.sol.candle.pool.*` and `dex.sol.candle.pair.*` subjects via publisher interface when hooked up to NATS.
 
 ## Sinks (`/sinks`)
-- **nats/** – Publisher utilities (TODO).
+- **nats/** – Publisher scaffolding (config/env parsing, API stubs, TODO for JetStream wiring).
 - **clickhouse/** – Batch writer with retry/backoff; tests assert insert batching.
-- **parquet/** – Hourly roll writer to S3/MinIO (stub).
+- **parquet/** – Cold storage writer scaffold (config/env parsing, TODO for parquet batching).
 
 ## Backfill (`/backfill`)
-- **substreams/** – YAML for StreamingFast modules mapping swap/pool snapshots.
-- **orchestrator/** – Range scheduler, sink invoker (stub).
+- **substreams/** – Manifest and notes for StreamingFast modules (scaffold).
+- **orchestrator/** – Range scheduler + sink invoker scaffold (config env, stub runner).
 
 ## API (`/api`)
 - **http/** – chi server, Redis cache wrapper, `/healthz`, `/v1/pool/:id`, `/v1/pool/:id/candles` endpoints.
 - **grpc/** – Placeholder for internal low-latency API.
 
 ## Bridge (`/bridge`)
-- Temporary service to mirror `dex.sol.*` subjects to legacy markets (skeleton).
+- Temporary service to mirror `dex.sol.*` subjects to legacy markets (scaffold: config/env parsing, stubbed runner).
 
 ## Ops (`/ops`)
 - **jetstream/** – Stream & consumer JSON, CLI docs, verification script.
-- **clickhouse/** – DDL scripts (future commit).
+- **clickhouse/** – DDL scripts for trades, snapshots, OHLCV, wallet heuristics.
 - **dashboards/** – Grafana definitions (TODO).
 
 ## Docs (`/docs`)

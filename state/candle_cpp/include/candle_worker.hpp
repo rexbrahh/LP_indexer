@@ -1,7 +1,7 @@
 #pragma once
 
+#include "candle_types.hpp"
 #include <atomic>
-#include <cstdint>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -15,38 +15,8 @@ namespace candle {
 struct Shard;
 struct CandleWindow;
 class CandleWorker;
-
-/// Fixed-point price representation (Q32.32)
-using FixedPrice = int64_t;
-
-/// Time granularity for candle windows (in seconds)
-enum class WindowSize : uint32_t {
-  SEC_1 = 1,
-  MIN_1 = 60,
-  MIN_5 = 300,
-  MIN_15 = 900,
-  HOUR_1 = 3600,
-  HOUR_4 = 14400,
-  DAY_1 = 86400
-};
-
-/// Represents a single candle for a time window
-struct Candle {
-  uint64_t open_time;      // Unix timestamp (seconds)
-  uint64_t close_time;     // Unix timestamp (seconds)
-  FixedPrice open;         // First trade price in window
-  FixedPrice high;         // Highest trade price in window
-  FixedPrice low;          // Lowest trade price in window
-  FixedPrice close;        // Last trade price in window
-  FixedPrice volume;       // Total volume (base token)
-  FixedPrice quote_volume; // Total volume (quote token)
-  uint32_t trades;         // Number of trades
-  bool provisional;        // True if window hasn't been finalized yet
-
-  Candle()
-      : open_time(0), close_time(0), open(0), high(0), low(0), close(0),
-        volume(0), quote_volume(0), trades(0), provisional(true) {}
-};
+class CandlePublisher;
+class InMemoryPublisher;
 
 /// Time-windowed candle aggregator for a specific pair/window combination
 struct CandleWindow {
@@ -123,6 +93,9 @@ public:
   /// Get shard for a given pair_id (consistent hashing)
   uint32_t get_shard_for_pair(const std::string &pair_id) const;
 
+  /// Override the publisher used to emit candles (thread-safe).
+  void set_publisher(std::shared_ptr<CandlePublisher> publisher);
+
   /// Get emitted candles (for testing)
   std::vector<Candle> get_emitted_candles() const;
 
@@ -137,9 +110,8 @@ private:
   // Timing wheel for finalization
   std::thread finalize_thread_;
 
-  // In-memory sink for emitted candles (provisional)
-  std::vector<Candle> emitted_candles_;
-  mutable std::mutex emitted_mutex_;
+  std::shared_ptr<CandlePublisher> publisher_;
+  std::shared_ptr<InMemoryPublisher> default_publisher_;
 
   /// Initialize shards
   void init_shards();
@@ -152,3 +124,4 @@ private:
 };
 
 } // namespace candle
+#include "publisher.hpp"

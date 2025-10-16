@@ -1,0 +1,24 @@
+package: "dex_solana_v1"
+version: v0.1.0
+imports:
+  - name: solana
+    module: sf.solana.type.v1              # Solana base
+modules:
+  - name: map_swaps
+    kind: map
+    inputs:
+      - source: sf.solana.type.v1.Block
+    output:
+      type: proto:dex.sol.v1.SwapEvent
+  - name: store_trades
+    kind: store
+    updatePolicy: add
+    valueType: proto:dex.sol.v1.SwapEvent
+    inputs:
+      - map: map_swaps
+  - name: map_pool_snapshots
+    kind: map
+    inputs:
+      - source: sf.solana.type.v1.Block
+    output:
+      type: proto:dex.sol.v1.PoolSnapshot

@@ -1,8 +1,10 @@
 #include "candle_worker.hpp"
+#include "publisher.hpp"
 #include <algorithm>
 #include <functional>
 #include <iostream>
 #include <stdexcept>
+#include <utility>
 
 namespace candle {
 
@@ -144,6 +146,8 @@ CandleWorker::CandleWorker(uint32_t num_shards)
   if (num_shards_ == 0) {
     throw std::invalid_argument("num_shards must be > 0");
   }
+  default_publisher_ = std::make_shared<InMemoryPublisher>();
+  publisher_ = default_publisher_;
   init_shards();
 }
 
@@ -207,10 +211,9 @@ void CandleWorker::on_trade(const std::string &pair_id, uint64_t timestamp,
 
 void CandleWorker::emit_candle(const std::string &pair_id,
                                WindowSize window_size, const Candle &candle) {
-  // Enqueue to in-memory sink for now (provisional)
-  {
-    std::lock_guard<std::mutex> lock(emitted_mutex_);
-    emitted_candles_.push_back(candle);
+  auto publisher = publisher_;
+  if (publisher) {
+    publisher->publish(pair_id, window_size, candle);
   }
 
   std::cout << "[EMIT] pair=" << pair_id
@@ -243,8 +246,18 @@ uint32_t CandleWorker::hash_pair_id(const std::string &pair_id) const {
 }
 
 std::vector<Candle> CandleWorker::get_emitted_candles() const {
-  std::lock_guard<std::mutex> lock(emitted_mutex_);
-  return emitted_candles_;
+  if (default_publisher_) {
+    return default_publisher_->snapshot();
+  }
+  return {};
+}
+
+void CandleWorker::set_publisher(std::shared_ptr<CandlePublisher> publisher) {
+  if (publisher) {
+    publisher_ = std::move(publisher);
+  } else {
+    publisher_ = default_publisher_;
+  }
 }
 
 void CandleWorker::finalize_loop() {

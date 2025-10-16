@@ -18,6 +18,7 @@ include_directories(include)
 set(CANDLE_SOURCES
     src/fixed_point.cpp
     src/candle_worker.cpp
+    src/publisher.cpp
 )
 
 # Create library

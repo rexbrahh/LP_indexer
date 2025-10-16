@@ -14,19 +14,23 @@ The candle engine ingests normalized DEX swap events and maintains stateful cand
    - Main entry point for processing trade events
    - Manages sharding of trading pairs across multiple shards for lock contention reduction
    - Routes incoming trades to appropriate shard based on consistent hashing
-   - Provides provisional `emit_candle()` stub for future NATS integration
+   - Emits candles via the pluggable publisher interface (defaults to in-memory sink; NATS integration pending)
+2. **Publisher** (`publisher.hpp`, `publisher.cpp`)
+   - Abstract interface for downstream sinks (NATS, ClickHouse, Parquet)
+   - Default implementation stores emitted candles in-memory for tests and local inspection
+   - Future implementations will serialize to `dex.sol.v1.Candle` protobufs and forward to JetStream
 
-2. **Shard** (defined in `candle_worker.hpp`)
+3. **Shard** (defined in `candle_worker.hpp`)
    - Owns a subset of trading pairs' candle windows
    - Each shard maintains independent locks to enable parallel processing
    - Maps `pair_id → vector<CandleWindow>` (one window per time granularity)
 
-3. **CandleWindow** (defined in `candle_worker.hpp`)
+4. **CandleWindow** (defined in `candle_worker.hpp`)
    - Manages candles for a specific pair and time window size
    - Stores `map<window_start_time, Candle>` for historical windows
    - Thread-safe updates with per-window mutex
 
-4. **FixedPoint** (`fixed_point.hpp`, `fixed_point.cpp`)
+5. **FixedPoint** (`fixed_point.hpp`, `fixed_point.cpp`)
    - Q32.32 fixed-point arithmetic utilities
    - 128-bit intermediate calculations for multiplication/division to prevent overflow
    - Supports deterministic price/volume operations without floating-point errors

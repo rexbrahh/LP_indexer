@@ -1,0 +1,94 @@
+syntax = "proto3";
+
+package dex.sol.v1;
+
+option go_package = "github.com/rexbrahh/lp-indexer/gen/go/dex/sol/v1;dexsolv1";
+
+message U128 {
+  uint64 hi = 1;
+  uint64 lo = 2;
+}
+
+message BlockHead {
+  uint64 chain_id = 1;
+  uint64 slot = 2;
+  uint64 ts_sec = 3;
+  string status = 4;
+}
+
+message TxMeta {
+  uint64 chain_id = 1;
+  uint64 slot = 2;
+  string sig = 3;
+  bool success = 4;
+  uint64 cu_used = 5;
+  uint64 cu_price = 6;
+  repeated string log_msgs = 7;
+}
+
+message SwapEvent {
+  uint64 chain_id = 1;
+  uint64 slot = 2;
+  string sig = 3;
+  uint32 index = 4;
+  string program_id = 5;
+  string pool_id = 6;
+  string mint_base = 7;
+  string mint_quote = 8;
+  uint32 dec_base = 9;
+  uint32 dec_quote = 10;
+  uint64 base_in = 11;
+  uint64 base_out = 12;
+  uint64 quote_in = 13;
+  uint64 quote_out = 14;
+  uint64 sqrt_price_q64_pre = 15;
+  uint64 sqrt_price_q64_post = 16;
+  uint64 reserves_base = 17;
+  uint64 reserves_quote = 18;
+  uint32 fee_bps = 19;
+  bool provisional = 20;
+  bool is_undo = 21;
+}
+
+message PoolSnapshot {
+  uint64 chain_id = 1;
+  uint64 slot = 2;
+  string pool_id = 3;
+  string mint_base = 4;
+  string mint_quote = 5;
+  uint64 sqrt_price_q64 = 6;
+  uint64 reserves_base = 7;
+  uint64 reserves_quote = 8;
+  uint32 fee_bps = 9;
+  uint64 liquidity = 10;
+}
+
+message Candle {
+  uint64 chain_id = 1;
+  string pair_id = 2;
+  string pool_id = 3;
+  string timeframe = 4;
+  uint64 window_start = 5;
+  bool provisional = 6;
+  bool is_correction = 7;
+  int64 open_px_q32 = 10;
+  int64 high_px_q32 = 11;
+  int64 low_px_q32 = 12;
+  int64 close_px_q32 = 13;
+  U128 vwap_num = 14;
+  U128 vwap_den = 15;
+  U128 vol_base = 16;
+  U128 vol_quote = 17;
+  uint32 trades = 18;
+}
+
+message WalletHeuristics {
+  uint64 chain_id = 1;
+  string wallet = 2;
+  uint64 first_seen_slot = 3;
+  uint32 swaps_24h = 4;
+  uint32 swaps_7d = 5;
+  bool is_fresh = 6;
+  bool is_sniper = 7;
+  float bundled_pct = 8;
+}
