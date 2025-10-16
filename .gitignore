@@ -1,0 +1,29 @@
+# Build artifacts
+/build/
+state/candle_cpp/build/
+cmake-build-*/
+CMakeFiles/
+Makefile*
+CMakeCache.txt
+compile_commands.json
+
+# Go
+go.sum
+generated/
+**/*.pb.go
+**/*.pb.cc
+**/*.pb.h
+**/*.pb.json
+
+# Rust legacy
+legacy/market-data-rs/target/
+legacy/market-data-rs/Cargo.lock
+
+# Nix
+result
+.cache/
+
+# IDE
+.idea/
+.vscode/
+.DS_Store
