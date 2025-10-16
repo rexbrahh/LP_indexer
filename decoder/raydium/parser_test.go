@@ -3,6 +3,7 @@ package raydium
 import (
 	"encoding/hex"
 	"encoding/json"
+	"math"
 	"os"
 	"path/filepath"
 	"testing"
@@ -10,28 +11,28 @@ import (
 
 // TestFixture represents the structure of our test fixture JSON files
 type TestFixture struct {
-	Description      string `json:"description"`
-	Signature        string `json:"signature"`
-	Slot             uint64 `json:"slot"`
-	Timestamp        int64  `json:"timestamp"`
-	PoolAddress      string `json:"pool_address"`
-	MintA            string `json:"mint_a"`
-	MintB            string `json:"mint_b"`
-	DecimalsA        uint8  `json:"decimals_a"`
-	DecimalsB        uint8  `json:"decimals_b"`
-	FeeBps           uint16 `json:"fee_bps"`
-	InstructionData  string `json:"instruction_data"`
-	PreVaultA        uint64 `json:"pre_vault_a"`
-	PostVaultA       uint64 `json:"post_vault_a"`
-	PreVaultB        uint64 `json:"pre_vault_b"`
-	PostVaultB       uint64 `json:"post_vault_b"`
-	SqrtPriceX64Low  uint64 `json:"sqrt_price_x64_low"`
-	SqrtPriceX64High uint64 `json:"sqrt_price_x64_high"`
+	Description       string  `json:"description"`
+	Signature         string  `json:"signature"`
+	Slot              uint64  `json:"slot"`
+	Timestamp         int64   `json:"timestamp"`
+	PoolAddress       string  `json:"pool_address"`
+	MintA             string  `json:"mint_a"`
+	MintB             string  `json:"mint_b"`
+	DecimalsA         uint8   `json:"decimals_a"`
+	DecimalsB         uint8   `json:"decimals_b"`
+	FeeBps            uint16  `json:"fee_bps"`
+	InstructionData   string  `json:"instruction_data"`
+	PreVaultA         uint64  `json:"pre_vault_a"`
+	PostVaultA        uint64  `json:"post_vault_a"`
+	PreVaultB         uint64  `json:"pre_vault_b"`
+	PostVaultB        uint64  `json:"post_vault_b"`
+	SqrtPriceX64Low   uint64  `json:"sqrt_price_x64_low"`
+	SqrtPriceX64High  uint64  `json:"sqrt_price_x64_high"`
 	ExpectedAmountIn  uint64  `json:"expected_amount_in"`
 	ExpectedAmountOut uint64  `json:"expected_amount_out"`
 	ExpectedPrice     float64 `json:"expected_price"`
 	ExpectedVolume    uint64  `json:"expected_volume"`
-	Notes            string  `json:"notes"`
+	Notes             string  `json:"notes"`
 }
 
 func loadTestFixture(t *testing.T, filename string) *TestFixture {
@@ -53,9 +54,9 @@ func loadTestFixture(t *testing.T, filename string) *TestFixture {
 
 func TestParseSwapInstruction(t *testing.T) {
 	tests := []struct {
-		name        string
-		fixture     string
-		wantErr     bool
+		name    string
+		fixture string
+		wantErr bool
 	}{
 		{
 			name:    "SOL to USDC swap",
@@ -327,9 +328,9 @@ func TestCalculatePrice(t *testing.T) {
 			price := event.CalculatePrice()
 
 			// Verify price is within tolerance
-			diff := abs(int(price - fixture.ExpectedPrice))
+			diff := math.Abs(price - fixture.ExpectedPrice)
 			tolerance := fixture.ExpectedPrice * tt.epsilon
-			if float64(diff) > tolerance {
+			if diff > tolerance {
 				t.Errorf("CalculatePrice() = %v, want %v (±%v)", price, fixture.ExpectedPrice, tolerance)
 			}
 		})

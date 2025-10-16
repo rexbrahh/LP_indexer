@@ -200,7 +200,7 @@ func TestMemorySlotTimeCache_Concurrent(t *testing.T) {
 	// Reader goroutine
 	go func() {
 		for i := uint64(0); i < 1000; i++ {
-			cache.Get(i) // Ignore errors, just test for races
+			_, _ = cache.Get(i) // Ignore errors, just test for races
 		}
 		done <- true
 	}()

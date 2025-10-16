@@ -23,8 +23,8 @@ type Config struct {
 // LoadConfig loads configuration from environment variables and programs.yaml
 func LoadConfig(programsYAMLPath string) (*Config, error) {
 	cfg := &Config{
-		Endpoint: os.Getenv("GEYSER_ENDPOINT"),
-		APIKey:   os.Getenv("GEYSER_API_KEY"),
+		Endpoint:       os.Getenv("GEYSER_ENDPOINT"),
+		APIKey:         os.Getenv("GEYSER_API_KEY"),
 		ProgramFilters: make(map[string]string),
 	}
 

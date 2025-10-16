@@ -1,9 +1,10 @@
 package orca_whirlpool
 
 import (
+	"math"
 	"testing"
 
-	"github.com/rexbrahh/lp-indexer/.conductor/almaty/decoder/common"
+	"github.com/rexbrahh/lp-indexer/decoder/common"
 )
 
 func TestDecoder_DecodeSwapTransaction(t *testing.T) {
@@ -104,6 +105,17 @@ func TestDecoder_DecodeSwapTransaction(t *testing.T) {
 				t.Errorf("ProtocolFee mismatch: got %d, want %d", event.ProtocolFee, fixture.ExpectedEvent.ProtocolFee)
 			}
 
+			// Validate floats with tolerance
+			if math.Abs(event.Price-fixture.ExpectedEvent.Price) > 1e-6 {
+				t.Errorf("Price mismatch: got %f, want %f", event.Price, fixture.ExpectedEvent.Price)
+			}
+			if math.Abs(event.VolumeBase-fixture.ExpectedEvent.VolumeBase) > 1e-6 {
+				t.Errorf("VolumeBase mismatch: got %f, want %f", event.VolumeBase, fixture.ExpectedEvent.VolumeBase)
+			}
+			if math.Abs(event.VolumeQuote-fixture.ExpectedEvent.VolumeQuote) > 1e-6 {
+				t.Errorf("VolumeQuote mismatch: got %f, want %f", event.VolumeQuote, fixture.ExpectedEvent.VolumeQuote)
+			}
+
 			// Validate canonical ordering
 			if event.BaseAsset != fixture.ExpectedEvent.BaseAsset {
 				t.Errorf("BaseAsset mismatch: got %s, want %s", event.BaseAsset, fixture.ExpectedEvent.BaseAsset)
@@ -130,22 +142,22 @@ func TestDecoder_CanonicalBaseQuoteOrdering(t *testing.T) {
 			name:          "USDC_SOL_pair",
 			mintA:         "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", // USDC
 			mintB:         "So11111111111111111111111111111111111111112",  // SOL
-			expectedBase:  "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", // USDC
-			expectedQuote: "So11111111111111111111111111111111111111112",  // SOL
+			expectedBase:  "So11111111111111111111111111111111111111112",
+			expectedQuote: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
 		},
 		{
 			name:          "USDC_USDT_pair",
 			mintA:         "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", // USDC
 			mintB:         "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB", // USDT
-			expectedBase:  "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", // USDC
-			expectedQuote: "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB", // USDT
+			expectedBase:  "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",
+			expectedQuote: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
 		},
 		{
 			name:          "USDT_SOL_pair",
 			mintA:         "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB", // USDT
 			mintB:         "So11111111111111111111111111111111111111112",  // SOL
-			expectedBase:  "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB", // USDT
-			expectedQuote: "So11111111111111111111111111111111111111112",  // SOL
+			expectedBase:  "So11111111111111111111111111111111111111112",
+			expectedQuote: "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",
 		},
 	}
 
@@ -169,10 +181,10 @@ func TestDecoder_CanonicalBaseQuoteOrdering(t *testing.T) {
 
 func TestDecoder_VolumeScaling(t *testing.T) {
 	tests := []struct {
-		name            string
-		amount          uint64
-		decimals        uint8
-		expectedScaled  float64
+		name           string
+		amount         uint64
+		decimals       uint8
+		expectedScaled float64
 	}{
 		{
 			name:           "SOL_amount",
@@ -214,27 +226,27 @@ func TestDecoder_VolumeScaling(t *testing.T) {
 
 func TestDecoder_FeeCalculation(t *testing.T) {
 	tests := []struct {
-		name               string
-		amountIn           uint64
-		feeRate            uint16
-		expectedFeeAmount  uint64
-		protocolFeeRate    uint16
+		name                string
+		amountIn            uint64
+		feeRate             uint16
+		expectedFeeAmount   uint64
+		protocolFeeRate     uint16
 		expectedProtocolFee uint64
 	}{
 		{
-			name:               "0.3%_fee_1_SOL",
-			amountIn:           1000000000, // 1 SOL
-			feeRate:            30,         // 0.3%
-			expectedFeeAmount:  3000000,    // 0.003 SOL
-			protocolFeeRate:    200,        // 2% of fee
-			expectedProtocolFee: 60000,     // 2% of 0.003
+			name:                "0.3%_fee_1_SOL",
+			amountIn:            1000000000, // 1 SOL
+			feeRate:             30,         // 0.3%
+			expectedFeeAmount:   3000000,    // 0.003 SOL
+			protocolFeeRate:     200,        // 2% of fee
+			expectedProtocolFee: 60000,      // 2% of 0.003
 		},
 		{
-			name:               "0.1%_fee_1000_USDC",
-			amountIn:           1000000000,
-			feeRate:            10,
-			expectedFeeAmount:  1000000,
-			protocolFeeRate:    100,
+			name:                "0.1%_fee_1000_USDC",
+			amountIn:            1000000000,
+			feeRate:             10,
+			expectedFeeAmount:   1000000,
+			protocolFeeRate:     100,
 			expectedProtocolFee: 10000,
 		},
 	}

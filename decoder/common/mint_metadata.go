@@ -112,11 +112,11 @@ func (p *InMemoryMintMetadataProvider) AddMintMetadata(metadata *MintMetadata) {
 	p.metadata[metadata.Address] = metadata
 }
 
-// CanonicalOrdering defines the priority for base asset ordering
-var CanonicalOrdering = []string{
-	"USDC",
-	"USDT",
-	"SOL",
+var canonicalPriority = map[string]int{
+	"USDC":    100,
+	"USDT":    90,
+	"SOL":     80,
+	"default": 0,
 }
 
 // DetermineBaseQuote determines which mint should be the base and which should be quote
@@ -136,26 +136,22 @@ func DetermineBaseQuote(mintA, mintB string, provider MintMetadataProvider) (bas
 	priorityA := getPriority(metadataA.Symbol)
 	priorityB := getPriority(metadataB.Symbol)
 
-	// Lower priority number = higher priority (e.g., USDC=0 is highest)
-	if priorityA < priorityB {
-		return mintA, mintB, nil
-	} else if priorityB < priorityA {
+	switch {
+	case priorityA == priorityB:
+		if mintA <= mintB {
+			return mintA, mintB, nil
+		}
 		return mintB, mintA, nil
-	}
-
-	// If same priority (or both not in canonical list), use lexicographic order
-	if mintA < mintB {
+	case priorityA > priorityB:
+		return mintB, mintA, nil
+	default:
 		return mintA, mintB, nil
 	}
-	return mintB, mintA, nil
 }
 
 func getPriority(symbol string) int {
-	for i, canonical := range CanonicalOrdering {
-		if symbol == canonical {
-			return i
-		}
+	if priority, ok := canonicalPriority[symbol]; ok {
+		return priority
 	}
-	// Not in canonical list - assign lowest priority
-	return len(CanonicalOrdering)
+	return canonicalPriority["default"]
 }

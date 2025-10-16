@@ -3,7 +3,7 @@ package raydium
 import (
 	"fmt"
 
-	"github.com/yourusername/lp-indexer/decoder/common"
+	"github.com/rexbrahh/lp-indexer/decoder/common"
 )
 
 // AccountKeys represents the accounts involved in a swap transaction
@@ -22,17 +22,17 @@ type AccountKeys struct {
 
 // SwapContext provides additional context needed to parse a swap event
 type SwapContext struct {
-	Accounts  AccountKeys
-	PreTokenA uint64 // Pre-swap balance of token A vault
+	Accounts   AccountKeys
+	PreTokenA  uint64 // Pre-swap balance of token A vault
 	PostTokenA uint64 // Post-swap balance of token A vault
-	PreTokenB uint64 // Pre-swap balance of token B vault
+	PreTokenB  uint64 // Pre-swap balance of token B vault
 	PostTokenB uint64 // Post-swap balance of token B vault
-	DecimalsA uint8
-	DecimalsB uint8
-	FeeBps    uint16
-	Slot      uint64
-	Signature string
-	Timestamp int64
+	DecimalsA  uint8
+	DecimalsB  uint8
+	FeeBps     uint16
+	Slot       uint64
+	Signature  string
+	Timestamp  int64
 }
 
 // ParseSwapEvent parses a swap instruction and context into a canonical SwapEvent
@@ -59,19 +59,20 @@ func ParseSwapEvent(instr *SwapInstruction, ctx *SwapContext) (*SwapEvent, error
 		Timestamp:        ctx.Timestamp,
 	}
 
-	// Determine amounts based on vault balance changes
-	if instr.IsBaseInput {
-		// Swapping A -> B
-		// Token A vault should increase (we're putting tokens in)
-		// Token B vault should decrease (we're taking tokens out)
-		event.AmountIn = ctx.PostTokenA - ctx.PreTokenA
-		event.AmountOut = ctx.PreTokenB - ctx.PostTokenB
-	} else {
-		// Swapping B -> A
-		// Token B vault should increase (we're putting tokens in)
-		// Token A vault should decrease (we're taking tokens out)
-		event.AmountIn = ctx.PostTokenB - ctx.PreTokenB
-		event.AmountOut = ctx.PreTokenA - ctx.PostTokenA
+	deltaA := int64(ctx.PostTokenA) - int64(ctx.PreTokenA)
+	deltaB := int64(ctx.PostTokenB) - int64(ctx.PreTokenB)
+
+	switch {
+	case deltaA > 0 && deltaB < 0:
+		event.AmountIn = uint64(deltaA)
+		event.AmountOut = uint64(-deltaB)
+		event.IsBaseInput = true
+	case deltaA < 0 && deltaB > 0:
+		event.AmountIn = uint64(deltaB)
+		event.AmountOut = uint64(-deltaA)
+		event.IsBaseInput = false
+	default:
+		return nil, fmt.Errorf("unable to determine swap direction: deltaA=%d deltaB=%d", deltaA, deltaB)
 	}
 
 	// Validate amounts
@@ -102,9 +103,6 @@ func (e *SwapEvent) NormalizeToCanonicalPair() (*common.CanonicalPair, error) {
 
 		// Invert the direction flag
 		e.IsBaseInput = !e.IsBaseInput
-
-		// Note: amounts stay the same, they're already absolute values
-		// The IsBaseInput flag now correctly indicates direction in canonical terms
 	}
 
 	return pair, nil
@@ -114,27 +112,19 @@ func (e *SwapEvent) NormalizeToCanonicalPair() (*common.CanonicalPair, error) {
 // Price = (sqrtPrice / 2^64)^2
 // Returns the price as a float64 for convenience
 func (e *SwapEvent) CalculatePrice() float64 {
-	// Combine the 128-bit sqrt price
-	// For Q64.64: the value is (low + high * 2^64) / 2^64
-	// sqrtPrice = low/2^64 + high
-	sqrtPrice := float64(e.SqrtPriceX64Low)/(1<<64) + float64(e.SqrtPriceX64High)
+	baseAmount := common.ScaleAmount(e.AmountIn, e.DecimalsA)
+	quoteAmount := common.ScaleAmount(e.AmountOut, e.DecimalsB)
 
-	// Price = sqrtPrice^2
-	price := sqrtPrice * sqrtPrice
-
-	// Adjust for decimal differences
-	decimalAdjustment := float64(int(e.DecimalsA) - int(e.DecimalsB))
-	if decimalAdjustment != 0 {
-		for i := 0; i < int(abs(decimalAdjustment)); i++ {
-			if decimalAdjustment > 0 {
-				price *= 10
-			} else {
-				price /= 10
-			}
-		}
+	if !e.IsBaseInput {
+		baseAmount = common.ScaleAmount(e.AmountOut, e.DecimalsA)
+		quoteAmount = common.ScaleAmount(e.AmountIn, e.DecimalsB)
 	}
 
-	return price
+	if baseAmount == 0 {
+		return 0
+	}
+
+	return quoteAmount / baseAmount
 }
 
 // CalculateVolume returns the swap volume in terms of the quote token
@@ -147,11 +137,4 @@ func (e *SwapEvent) CalculateVolume() uint64 {
 	}
 	// B->A: volume is the amount of B swapped
 	return e.AmountIn
-}
-
-func abs(x int) int {
-	if x < 0 {
-		return -x
-	}
-	return x
 }

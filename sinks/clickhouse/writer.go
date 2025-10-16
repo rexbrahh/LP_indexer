@@ -33,12 +33,12 @@ type Writer struct {
 }
 
 type tradeBatch struct {
-	slots       proto.ColUInt64
-	signatures  proto.ColStr
-	blockTimes  proto.ColDateTime64
-	poolIDs     proto.ColStr
-	amounts     proto.ColFloat64
-	count       int
+	slots      proto.ColUInt64
+	signatures proto.ColStr
+	blockTimes proto.ColDateTime64
+	poolIDs    proto.ColStr
+	amounts    proto.ColFloat64
+	count      int
 }
 
 type candleBatch struct {
@@ -96,22 +96,22 @@ func NewWithConfig(ctx context.Context, cfg Config) (*Writer, error) {
 // validateConfig checks that required configuration fields are set
 func validateConfig(cfg Config) error {
 	if cfg.DSN == "" {
-		return fmt.Errorf("DSN is required")
+		return fmt.Errorf("dsn is required")
 	}
 	if cfg.Database == "" {
-		return fmt.Errorf("Database is required")
+		return fmt.Errorf("database is required")
 	}
 	if cfg.TradesTable == "" {
-		return fmt.Errorf("TradesTable is required")
+		return fmt.Errorf("trades table is required")
 	}
 	if cfg.CandlesTable == "" {
-		return fmt.Errorf("CandlesTable is required")
+		return fmt.Errorf("candles table is required")
 	}
 	if cfg.BatchSize <= 0 {
-		return fmt.Errorf("BatchSize must be positive")
+		return fmt.Errorf("batch size must be positive")
 	}
 	if cfg.MaxRetries < 0 {
-		return fmt.Errorf("MaxRetries must be non-negative")
+		return fmt.Errorf("max retries must be non-negative")
 	}
 	return nil
 }

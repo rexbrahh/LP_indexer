@@ -1,0 +1,18 @@
+{
+  "name": "DEX",
+  "description": "Solana DEX raw + state + candles",
+  "subjects": [
+    "dex.sol.blocks.head",
+    "dex.sol.tx.meta",
+    "dex.sol.*.swap",
+    "dex.sol.pool.snapshot",
+    "dex.sol.candle.pool.*",
+    "dex.sol.candle.pair.*"
+  ],
+  "retention": "limits",
+  "storage": "file",
+  "discard": "old",
+  "replicas": 3,
+  "max_age": 0,
+  "duplicate_window": "2m"
+}

@@ -7,10 +7,10 @@ import (
 
 func TestSqrtPriceQ64ToFloat(t *testing.T) {
 	tests := []struct {
-		name           string
-		sqrtPriceQ64   string
-		expectedPrice  float64
-		tolerance      float64
+		name          string
+		sqrtPriceQ64  string
+		expectedPrice float64
+		tolerance     float64
 	}{
 		{
 			name:          "price_1",

@@ -6,13 +6,13 @@ import (
 
 func TestResolvePair(t *testing.T) {
 	tests := []struct {
-		name          string
-		mintA         string
-		mintB         string
-		wantBase      string
-		wantQuote     string
-		wantInverted  bool
-		wantErr       bool
+		name         string
+		mintA        string
+		mintB        string
+		wantBase     string
+		wantQuote    string
+		wantInverted bool
+		wantErr      bool
 	}{
 		{
 			name:         "SOL/USDC pair",
@@ -47,7 +47,7 @@ func TestResolvePair(t *testing.T) {
 			mintB:        "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",
 			wantBase:     "USDT",
 			wantQuote:    "USDC",
-			wantInverted: false,
+			wantInverted: true,
 			wantErr:      false,
 		},
 		{

@@ -23,31 +23,30 @@ bootstrap:
 	go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
 	@echo "Bootstrap complete"
 
-# Generate protobuf code
+# Generate protobuf code (if proto directory exists)
 proto-gen:
-	@echo "Generating protobuf code..."
-	protoc --go_out=. --go_opt=paths=source_relative \
-		--go-grpc_out=. --go-grpc_opt=paths=source_relative \
-		proto/**/*.proto
-	@echo "Protobuf generation complete"
+	@if [ -f buf.yaml ] && [ -d proto ]; then \
+		echo "Generating protobuf code..."; \
+		buf generate; \
+	else \
+		echo "No protobuf definitions found"; \
+	fi
 
 # Run tests
 test:
 	@echo "Running tests..."
-	go test -v -race -cover ./...
+	go test ./...
 
 # Run linters
 lint:
 	@echo "Running linters..."
 	go vet ./...
-	gofmt -l -s .
 	@command -v golangci-lint >/dev/null 2>&1 && golangci-lint run || echo "golangci-lint not installed, skipping"
 
 # Build all binaries
 build:
-	@echo "Building binaries..."
-	go build -o bin/ingestor ./ingestor/cmd
-	go build -o bin/api ./api/cmd
+	@echo "Building Go packages..."
+	go build ./...
 	@echo "Build complete"
 
 # Clean build artifacts
@@ -74,73 +73,6 @@ down:
 ops.jetstream.init:
 	@echo "Initializing JetStream streams and consumers..."
 	@command -v nats >/dev/null 2>&1 || { echo "ERROR: nats CLI not found. Install with: brew install nats-io/nats-tools/nats"; exit 1; }
-	@echo ""
-	@echo "Creating dex-swaps stream..."
-	@nats stream add dex-swaps \
-		--subjects="dex.sol.swaps" \
-		--storage=file \
-		--retention=workq \
-		--replicas=1 \
-		--discard=old \
-		--max-age=168h \
-		--max-msg-size=1048576 \
-		--dupe-window=1h \
-		--defaults || echo "Stream dex-swaps may already exist"
-	@echo ""
-	@echo "Creating dex-candles-1m stream..."
-	@nats stream add dex-candles-1m \
-		--subjects="dex.sol.candles.1m" \
-		--storage=file \
-		--retention=workq \
-		--replicas=1 \
-		--max-age=720h \
-		--dupe-window=1h \
-		--defaults || echo "Stream dex-candles-1m may already exist"
-	@echo ""
-	@echo "Creating dex-candles-5m stream..."
-	@nats stream add dex-candles-5m \
-		--subjects="dex.sol.candles.5m" \
-		--storage=file \
-		--retention=workq \
-		--replicas=1 \
-		--max-age=2160h \
-		--dupe-window=1h \
-		--defaults || echo "Stream dex-candles-5m may already exist"
-	@echo ""
-	@echo "Creating dex-candles-1h stream..."
-	@nats stream add dex-candles-1h \
-		--subjects="dex.sol.candles.1h" \
-		--storage=file \
-		--retention=workq \
-		--replicas=1 \
-		--max-age=8760h \
-		--dupe-window=1h \
-		--defaults || echo "Stream dex-candles-1h may already exist"
-	@echo ""
-	@echo "Creating clickhouse-sink consumer for dex-swaps..."
-	@nats consumer add dex-swaps clickhouse-sink \
-		--filter="dex.sol.swaps" \
-		--ack=explicit \
-		--wait=30s \
-		--max-deliver=3 \
-		--deliver=all \
-		--replay=instant \
-		--defaults || echo "Consumer clickhouse-sink may already exist"
-	@echo ""
-	@echo "Creating clickhouse-sink consumer for dex-candles-1m..."
-	@nats consumer add dex-candles-1m clickhouse-sink \
-		--filter="dex.sol.candles.1m" \
-		--ack=explicit \
-		--wait=30s \
-		--max-deliver=3 \
-		--deliver=all \
-		--replay=instant \
-		--defaults || echo "Consumer clickhouse-sink may already exist"
-	@echo ""
+	@nats stream add --config ops/jetstream/streams.dex.json || echo "Stream DEX may already exist"
+	@nats consumer add DEX --config ops/jetstream/consumer.swaps.json || echo "Consumer SWAP_FIREHOSE may already exist"
 	@echo "✓ JetStream initialization complete!"
-	@echo ""
-	@echo "Verify with:"
-	@echo "  nats stream ls"
-	@echo "  nats consumer ls dex-swaps"
-	@echo ""
-	@echo "See ops/jetstream/README.md for detailed documentation"

@@ -8,39 +8,39 @@ func TestInMemoryMintMetadataProvider_GetMintMetadata(t *testing.T) {
 	provider := NewInMemoryMintMetadataProvider()
 
 	tests := []struct {
-		name            string
-		mintAddress     string
-		expectedSymbol  string
+		name             string
+		mintAddress      string
+		expectedSymbol   string
 		expectedDecimals uint8
-		expectError     bool
+		expectError      bool
 	}{
 		{
-			name:            "SOL",
-			mintAddress:     "So11111111111111111111111111111111111111112",
-			expectedSymbol:  "SOL",
+			name:             "SOL",
+			mintAddress:      "So11111111111111111111111111111111111111112",
+			expectedSymbol:   "SOL",
 			expectedDecimals: 9,
-			expectError:     false,
+			expectError:      false,
 		},
 		{
-			name:            "USDC",
-			mintAddress:     "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
-			expectedSymbol:  "USDC",
+			name:             "USDC",
+			mintAddress:      "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+			expectedSymbol:   "USDC",
 			expectedDecimals: 6,
-			expectError:     false,
+			expectError:      false,
 		},
 		{
-			name:            "USDT",
-			mintAddress:     "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",
-			expectedSymbol:  "USDT",
+			name:             "USDT",
+			mintAddress:      "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",
+			expectedSymbol:   "USDT",
 			expectedDecimals: 6,
-			expectError:     false,
+			expectError:      false,
 		},
 		{
-			name:            "ORCA",
-			mintAddress:     "7vfCXTUXx5WJV5JADk17DUJ4ksgau7utNKj4b963voxs",
-			expectedSymbol:  "ORCA",
+			name:             "ORCA",
+			mintAddress:      "7vfCXTUXx5WJV5JADk17DUJ4ksgau7utNKj4b963voxs",
+			expectedSymbol:   "ORCA",
 			expectedDecimals: 6,
-			expectError:     false,
+			expectError:      false,
 		},
 		{
 			name:        "unknown_mint",
@@ -79,22 +79,22 @@ func TestInMemoryMintMetadataProvider_GetDecimals(t *testing.T) {
 	provider := NewInMemoryMintMetadataProvider()
 
 	tests := []struct {
-		name            string
-		mintAddress     string
+		name             string
+		mintAddress      string
 		expectedDecimals uint8
-		expectError     bool
+		expectError      bool
 	}{
 		{
-			name:            "SOL",
-			mintAddress:     "So11111111111111111111111111111111111111112",
+			name:             "SOL",
+			mintAddress:      "So11111111111111111111111111111111111111112",
 			expectedDecimals: 9,
-			expectError:     false,
+			expectError:      false,
 		},
 		{
-			name:            "USDC",
-			mintAddress:     "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+			name:             "USDC",
+			mintAddress:      "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
 			expectedDecimals: 6,
-			expectError:     false,
+			expectError:      false,
 		},
 	}
 
@@ -134,36 +134,36 @@ func TestDetermineBaseQuote(t *testing.T) {
 			name:          "USDC_SOL",
 			mintA:         "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", // USDC
 			mintB:         "So11111111111111111111111111111111111111112",  // SOL
-			expectedBase:  "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", // USDC is base (higher priority)
-			expectedQuote: "So11111111111111111111111111111111111111112",  // SOL is quote
+			expectedBase:  "So11111111111111111111111111111111111111112",
+			expectedQuote: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
 		},
 		{
 			name:          "SOL_USDC_reversed",
 			mintA:         "So11111111111111111111111111111111111111112",  // SOL
 			mintB:         "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", // USDC
-			expectedBase:  "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", // USDC is still base
-			expectedQuote: "So11111111111111111111111111111111111111112",  // SOL is still quote
+			expectedBase:  "So11111111111111111111111111111111111111112",
+			expectedQuote: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
 		},
 		{
 			name:          "USDC_USDT",
 			mintA:         "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", // USDC
 			mintB:         "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB", // USDT
-			expectedBase:  "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", // USDC is base (higher priority than USDT)
-			expectedQuote: "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB", // USDT is quote
+			expectedBase:  "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",
+			expectedQuote: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
 		},
 		{
 			name:          "USDT_SOL",
 			mintA:         "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB", // USDT
 			mintB:         "So11111111111111111111111111111111111111112",  // SOL
-			expectedBase:  "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB", // USDT is base (higher priority than SOL)
-			expectedQuote: "So11111111111111111111111111111111111111112",  // SOL is quote
+			expectedBase:  "So11111111111111111111111111111111111111112",
+			expectedQuote: "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",
 		},
 		{
 			name:          "ORCA_SOL",
 			mintA:         "7vfCXTUXx5WJV5JADk17DUJ4ksgau7utNKj4b963voxs", // ORCA
 			mintB:         "So11111111111111111111111111111111111111112",  // SOL
-			expectedBase:  "So11111111111111111111111111111111111111112",  // SOL is base (higher priority)
-			expectedQuote: "7vfCXTUXx5WJV5JADk17DUJ4ksgau7utNKj4b963voxs", // ORCA is quote
+			expectedBase:  "7vfCXTUXx5WJV5JADk17DUJ4ksgau7utNKj4b963voxs",
+			expectedQuote: "So11111111111111111111111111111111111111112",
 		},
 	}
 
@@ -185,17 +185,17 @@ func TestDetermineBaseQuote(t *testing.T) {
 	}
 }
 
-func TestCanonicalOrdering(t *testing.T) {
-	// Test that canonical ordering is correct
-	expectedOrder := []string{"USDC", "USDT", "SOL"}
-
-	if len(CanonicalOrdering) != len(expectedOrder) {
-		t.Fatalf("CanonicalOrdering length mismatch: got %d, want %d", len(CanonicalOrdering), len(expectedOrder))
+func TestPriorityMap(t *testing.T) {
+	cases := map[string]int{
+		"USDC":    100,
+		"USDT":    90,
+		"SOL":     80,
+		"UNKNOWN": 0,
 	}
 
-	for i, symbol := range expectedOrder {
-		if CanonicalOrdering[i] != symbol {
-			t.Errorf("CanonicalOrdering[%d] mismatch: got %s, want %s", i, CanonicalOrdering[i], symbol)
+	for symbol, expected := range cases {
+		if got := getPriority(symbol); got != expected {
+			t.Errorf("priority for %s: got %d, want %d", symbol, got, expected)
 		}
 	}
 }

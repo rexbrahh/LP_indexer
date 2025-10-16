@@ -35,7 +35,7 @@ func TestValidateConfig(t *testing.T) {
 				BatchSize:    1000,
 			},
 			wantErr: true,
-			errMsg:  "DSN is required",
+			errMsg:  "dsn is required",
 		},
 		{
 			name: "missing database",
@@ -46,7 +46,7 @@ func TestValidateConfig(t *testing.T) {
 				BatchSize:    1000,
 			},
 			wantErr: true,
-			errMsg:  "Database is required",
+			errMsg:  "database is required",
 		},
 		{
 			name: "missing trades table",
@@ -57,7 +57,7 @@ func TestValidateConfig(t *testing.T) {
 				BatchSize:    1000,
 			},
 			wantErr: true,
-			errMsg:  "TradesTable is required",
+			errMsg:  "trades table is required",
 		},
 		{
 			name: "missing candles table",
@@ -68,7 +68,7 @@ func TestValidateConfig(t *testing.T) {
 				BatchSize:   1000,
 			},
 			wantErr: true,
-			errMsg:  "CandlesTable is required",
+			errMsg:  "candles table is required",
 		},
 		{
 			name: "invalid batch size",
@@ -80,7 +80,7 @@ func TestValidateConfig(t *testing.T) {
 				BatchSize:    0,
 			},
 			wantErr: true,
-			errMsg:  "BatchSize must be positive",
+			errMsg:  "batch size must be positive",
 		},
 		{
 			name: "negative max retries",
@@ -93,7 +93,7 @@ func TestValidateConfig(t *testing.T) {
 				MaxRetries:   -1,
 			},
 			wantErr: true,
-			errMsg:  "MaxRetries must be non-negative",
+			errMsg:  "max retries must be non-negative",
 		},
 	}
 

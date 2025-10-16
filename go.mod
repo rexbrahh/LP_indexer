@@ -1,4 +1,4 @@
-module github.com/rexliu/lp-indexer
+module github.com/rexbrahh/lp-indexer
 
 go 1.24.0
 

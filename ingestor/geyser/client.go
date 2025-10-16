@@ -7,9 +7,10 @@ import (
 	"log"
 	"time"
 
+	pb "github.com/rexbrahh/lp-indexer/ingestor/geyser/pb"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
-	pb "github.com/rpcpool/yellowstone-grpc/yellowstone-grpc-proto/golang/yellowstone-grpc"
+	"google.golang.org/grpc/metadata"
 )
 
 const (
@@ -53,7 +54,7 @@ func (c *Client) Connect() error {
 		),
 	}
 
-	conn, err := grpc.DialContext(c.ctx, c.cfg.Endpoint, opts...)
+	conn, err := grpc.DialContext(c.ctx, c.cfg.Endpoint, opts...) //nolint:staticcheck // DialContext remains viable for gRPC 1.x
 	if err != nil {
 		return fmt.Errorf("failed to dial geyser: %w", err)
 	}
@@ -99,7 +100,9 @@ func (c *Client) subscribeLoop(startSlot uint64, updateCh chan<- *pb.SubscribeUp
 		req := c.buildSubscribeRequest(replaySlot)
 
 		// Create subscription stream
-		stream, err := c.client.Subscribe(c.ctx)
+		md := metadata.Pairs("x-api-key", c.cfg.APIKey)
+		streamCtx := metadata.NewOutgoingContext(c.ctx, md)
+		stream, err := c.client.Subscribe(streamCtx)
 		if err != nil {
 			log.Printf("Failed to create subscription: %v", err)
 			errCh <- fmt.Errorf("subscribe failed: %w", err)
@@ -156,7 +159,7 @@ func (c *Client) buildSubscribeRequest(startSlot uint64) *pb.SubscribeRequest {
 	}
 
 	return &pb.SubscribeRequest{
-		Slots:              map[string]*pb.SubscribeRequestFilterSlots{
+		Slots: map[string]*pb.SubscribeRequestFilterSlots{
 			"client": {},
 		},
 		Accounts:           accounts,
@@ -164,12 +167,11 @@ func (c *Client) buildSubscribeRequest(startSlot uint64) *pb.SubscribeRequest {
 		TransactionsStatus: map[string]*pb.SubscribeRequestFilterTransactions{},
 		Entry:              map[string]*pb.SubscribeRequestFilterEntry{},
 		Blocks:             map[string]*pb.SubscribeRequestFilterBlocks{},
-		BlocksMeta:         map[string]*pb.SubscribeRequestFilterBlocksMeta{
+		BlocksMeta: map[string]*pb.SubscribeRequestFilterBlocksMeta{
 			"client": {},
 		},
-		AccountsDataSlice:  []*pb.SubscribeRequestAccountsDataSlice{},
-		Ping:               nil,
-		Commitment:         pb.CommitmentLevel_CONFIRMED,
+		AccountsDataSlice: []*pb.SubscribeRequestAccountsDataSlice{},
+		Commitment:        pb.CommitmentLevel_CONFIRMED,
 	}
 }
 
@@ -193,11 +195,6 @@ func (c *Client) processStream(stream pb.Geyser_SubscribeClient, updateCh chan<-
 			log.Printf("Stream receive error: %v", err)
 			errCh <- fmt.Errorf("stream recv failed: %w", err)
 			return lastSlot
-		}
-
-		// Track latest slot from updates
-		if update.Filters != nil && len(update.Filters) > 0 {
-			// Update filters indicate the subscription is active
 		}
 
 		// Extract slot number from update

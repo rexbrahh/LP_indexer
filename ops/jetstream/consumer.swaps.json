@@ -1,0 +1,11 @@
+{
+  "stream_name": "DEX",
+  "name": "SWAP_FIREHOSE",
+  "filter_subject": "dex.sol.*.swap",
+  "ack_policy": "explicit",
+  "deliver_policy": "new",
+  "replay_policy": "instant",
+  "max_deliver": 10,
+  "max_ack_pending": 50000,
+  "sample_freq": "0%"
+}

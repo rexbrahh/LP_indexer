@@ -7,14 +7,14 @@ import (
 // Priority order for canonical pair determination
 // Higher priority tokens should be the quote (second token in pair)
 var quotePriority = map[string]int{
-	"USDC":   100, // Highest priority quote
-	"USDT":   90,
-	"SOL":    80,
-	"WSOL":   75,
-	"ETH":    70,
-	"WETH":   65,
-	"BTC":    60,
-	"WBTC":   55,
+	"USDC":    100, // Highest priority quote
+	"USDT":    90,
+	"SOL":     80,
+	"WSOL":    75,
+	"ETH":     70,
+	"WETH":    65,
+	"BTC":     60,
+	"WBTC":    55,
 	"default": 0,
 }
 
@@ -58,24 +58,9 @@ func ResolvePair(mintA, mintB string) (*CanonicalPair, error) {
 
 	pair := &CanonicalPair{}
 
-	// Higher priority token becomes the quote (second in pair)
-	if priorityB > priorityA {
-		// B has higher priority, so order is A/B (base/quote)
-		pair.BaseToken = symbolA
-		pair.BaseMint = mintA
-		pair.QuoteToken = symbolB
-		pair.QuoteMint = mintB
-		pair.Inverted = false
-	} else if priorityA > priorityB {
-		// A has higher priority, so order is B/A (base/quote)
-		pair.BaseToken = symbolB
-		pair.BaseMint = mintB
-		pair.QuoteToken = symbolA
-		pair.QuoteMint = mintA
-		pair.Inverted = true
-	} else {
-		// Equal priority, use lexicographic ordering of mints for consistency
-		if mintA < mintB {
+	if priorityA == priorityB {
+		// Equal priority → lexicographic ordering of mint addresses
+		if mintA <= mintB {
 			pair.BaseToken = symbolA
 			pair.BaseMint = mintA
 			pair.QuoteToken = symbolB
@@ -88,7 +73,25 @@ func ResolvePair(mintA, mintB string) (*CanonicalPair, error) {
 			pair.QuoteMint = mintA
 			pair.Inverted = true
 		}
+		return pair, nil
 	}
+
+	if priorityA > priorityB {
+		// Token A has higher quote priority → it becomes the quote leg
+		pair.BaseToken = symbolB
+		pair.BaseMint = mintB
+		pair.QuoteToken = symbolA
+		pair.QuoteMint = mintA
+		pair.Inverted = true
+		return pair, nil
+	}
+
+	// Token B has higher quote priority → keep original ordering
+	pair.BaseToken = symbolA
+	pair.BaseMint = mintA
+	pair.QuoteToken = symbolB
+	pair.QuoteMint = mintB
+	pair.Inverted = false
 
 	return pair, nil
 }

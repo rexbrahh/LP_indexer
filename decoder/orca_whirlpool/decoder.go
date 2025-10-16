@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/rexbrahh/lp-indexer/.conductor/almaty/decoder/common"
+	"github.com/rexbrahh/lp-indexer/decoder/common"
 )
 
 // Decoder handles decoding of Orca Whirlpool swap transactions
