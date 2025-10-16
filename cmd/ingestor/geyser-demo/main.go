@@ -37,7 +37,11 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to create client: %v", err)
 	}
-	defer client.Close()
+	defer func() {
+		if err := client.Close(); err != nil {
+			log.Printf("failed to close geyser client: %v", err)
+		}
+	}()
 
 	if err := client.Connect(); err != nil {
 		log.Fatalf("Failed to connect: %v", err)

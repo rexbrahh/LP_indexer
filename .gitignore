@@ -9,11 +9,6 @@ compile_commands.json
 
 # Go
 go.sum
-generated/
-gen/
-**/*.pb.go
-**/*.pb.cc
-**/*.pb.h
 **/*.pb.json
 
 # Rust legacy
@@ -28,4 +23,3 @@ result
 .idea/
 .vscode/
 .DS_Store
-

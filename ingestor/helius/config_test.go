@@ -62,5 +62,5 @@ func TestFromEnvInvalidDurations(t *testing.T) {
 	}
 
 	// Clean up invalid env for subsequent tests
-	os.Unsetenv(envHeliusTimeoutMS)
+	_ = os.Unsetenv(envHeliusTimeoutMS)
 }

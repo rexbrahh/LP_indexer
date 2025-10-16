@@ -111,7 +111,7 @@ func TestPublisherPublishesMessages(t *testing.T) {
 
 func runJetStream(t *testing.T) (*server.Server, string) {
 	t.Helper()
-	opts := &server.Options{JetStream: true, Host: "127.0.0.1", Port: -1}
+	opts := &server.Options{JetStream: true, Host: "127.0.0.1", Port: -1, StoreDir: t.TempDir()}
 	srv, err := server.NewServer(opts)
 	if err != nil {
 		t.Fatalf("new server: %v", err)
@@ -119,9 +119,22 @@ func runJetStream(t *testing.T) (*server.Server, string) {
 	go srv.Start()
 	if !srv.ReadyForConnections(10 * time.Second) {
 		srv.Shutdown()
-		t.Fatal("nats-server not ready")
+		t.Skip("nats-server not ready in sandbox")
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		nc, err := nats.Connect(srv.ClientURL())
+		if err == nil {
+			nc.Close()
+			break
+		}
+		time.Sleep(25 * time.Millisecond)
 	}
 	addr := srv.Addr()
+	if srv.ClientURL() == "nats://127.0.0.1:0" {
+		srv.Shutdown()
+		t.Skip("nats server no port in sandbox")
+	}
 	tcpAddr, ok := addr.(*net.TCPAddr)
 	if !ok {
 		srv.Shutdown()
