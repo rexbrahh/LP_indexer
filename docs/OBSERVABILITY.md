@@ -9,6 +9,10 @@
 - `dedup_drops_total` – duplicate messages dropped via Msg-Id.
 - `clickhouse_write_latency_ms_bucket{table}` – sink write latency.
 - `backfill_events_per_sec` – Substreams throughput.
+- `bridge_forward_total{subject}` – messages mirrored to legacy subjects.
+- `bridge_dropped_total{subject}` – messages acknowledged but not forwarded.
+- `bridge_publish_errors_total{subject}` – legacy publish failures.
+- `bridge_source_lag_seconds{subject}` – source stream age observed by the bridge.
 
 ## Dashboards (planned)
 - Ingestor health (slot lag, error rate, reconnect count).

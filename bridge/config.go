@@ -6,18 +6,22 @@ import (
 )
 
 const (
-	envSourceURL    = "BRIDGE_SOURCE_NATS_URL"
-	envTargetURL    = "BRIDGE_TARGET_NATS_URL"
-	envSourceStream = "BRIDGE_SOURCE_STREAM"
-	envTargetStream = "BRIDGE_TARGET_STREAM"
+	envSourceURL      = "BRIDGE_SOURCE_NATS_URL"
+	envTargetURL      = "BRIDGE_TARGET_NATS_URL"
+	envSourceStream   = "BRIDGE_SOURCE_STREAM"
+	envTargetStream   = "BRIDGE_TARGET_STREAM"
+	envSubjectMapPath = "BRIDGE_SUBJECT_MAP_PATH"
+	envMetricsAddr    = "BRIDGE_METRICS_ADDR"
 )
 
 // Config controls the source/target JetStream endpoints.
 type Config struct {
-	SourceURL    string
-	TargetURL    string
-	SourceStream string
-	TargetStream string
+	SourceURL       string
+	TargetURL       string
+	SourceStream    string
+	TargetStream    string
+	SubjectMappings []SubjectMapping
+	MetricsAddr     string
 }
 
 // Validate ensures required fields are populated.
@@ -44,6 +48,14 @@ func FromEnv() (Config, error) {
 		TargetURL:    os.Getenv(envTargetURL),
 		SourceStream: os.Getenv(envSourceStream),
 		TargetStream: os.Getenv(envTargetStream),
+		MetricsAddr:  os.Getenv(envMetricsAddr),
+	}
+	if path := os.Getenv(envSubjectMapPath); path != "" {
+		mappings, err := LoadSubjectMappings(path)
+		if err != nil {
+			return Config{}, fmt.Errorf("load subject mappings: %w", err)
+		}
+		cfg.SubjectMappings = mappings
 	}
 	return cfg, cfg.Validate()
 }

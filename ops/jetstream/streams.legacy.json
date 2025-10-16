@@ -1,0 +1,16 @@
+{
+  "name": "legacy",
+  "description": "Legacy bridge subjects",
+  "subjects": [
+    "legacy.dex.swap.*",
+    "legacy.dex.candle.pool.*",
+    "legacy.dex.candle.pair.*",
+    "legacy.dex.pool.snapshot"
+  ],
+  "retention": "limits",
+  "storage": "file",
+  "discard": "old",
+  "replicas": 1,
+  "max_age": 0,
+  "duplicate_window": "2m"
+}

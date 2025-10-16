@@ -5,6 +5,11 @@
 - Verify: `make ops.jetstream.verify`
 - Detailed report: `./scripts/jetstream-validate.sh`
 
+## Bridge
+- Run locally: `make run.bridge`
+- Check Prometheus metrics: `make check.bridge.metrics` (expects the bridge metrics endpoint to be live)
+- Subject mappings live at `ops/bridge/subject_map.yaml`
+
 ## ClickHouse
 - Apply schema (once DDL is committed): `clickhouse-client --queries-file ops/clickhouse/all.sql`
 - Monitor write latency via exported Prometheus metrics (`clickhouse_write_latency_ms_bucket`).

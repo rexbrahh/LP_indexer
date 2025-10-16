@@ -1,4 +1,4 @@
-.PHONY: help bootstrap proto-gen test lint build clean up down ops.jetstream.init ops.jetstream.verify
+.PHONY: help bootstrap proto-gen test lint build clean up down ops.jetstream.init ops.jetstream.verify run.bridge check.bridge.metrics
 
 PROTO_FILES := $(shell find proto -name '*.proto' 2>/dev/null)
 GOBIN := $(shell go env GOPATH)/bin
@@ -18,6 +18,8 @@ help:
 	@echo "  down               - Stop local dependencies"
 	@echo "  ops.jetstream.init - Initialize JetStream streams and consumers"
 	@echo "  ops.jetstream.verify - Verify JetStream streams and consumers exist"
+	@echo "  run.bridge          - Run the legacy bridge with local subject map"
+	@echo "  check.bridge.metrics - Assert bridge Prometheus metrics respond"
 
 # Bootstrap development environment
 bootstrap:
@@ -100,3 +102,25 @@ ops.jetstream.verify:
 	@nats stream info DEX >/dev/null 2>&1 || { echo "ERROR: Stream DEX does not exist"; exit 1; }
 	@nats consumer info DEX SWAP_FIREHOSE >/dev/null 2>&1 || { echo "ERROR: Consumer SWAP_FIREHOSE does not exist"; exit 1; }
 	@echo "✓ JetStream verification complete!"
+
+run.bridge:
+    @echo "Starting legacy bridge..."
+    BRIDGE_SOURCE_NATS_URL?=nats://127.0.0.1:4222
+    BRIDGE_TARGET_NATS_URL?=$${BRIDGE_SOURCE_NATS_URL}
+    BRIDGE_SOURCE_STREAM?=DEX
+    BRIDGE_TARGET_STREAM?=legacy
+    BRIDGE_SUBJECT_MAP_PATH?=ops/bridge/subject_map.yaml
+    BRIDGE_METRICS_ADDR?=:9090
+    @if [ ! -f "$$BRIDGE_SUBJECT_MAP_PATH" ]; then echo "ERROR: subject map $$BRIDGE_SUBJECT_MAP_PATH not found"; exit 1; fi
+    BRIDGE_SOURCE_NATS_URL=$${BRIDGE_SOURCE_NATS_URL} \
+    BRIDGE_TARGET_NATS_URL=$${BRIDGE_TARGET_NATS_URL} \
+    BRIDGE_SOURCE_STREAM=$${BRIDGE_SOURCE_STREAM} \
+    BRIDGE_TARGET_STREAM=$${BRIDGE_TARGET_STREAM} \
+    BRIDGE_SUBJECT_MAP_PATH=$${BRIDGE_SUBJECT_MAP_PATH} \
+    BRIDGE_METRICS_ADDR=$${BRIDGE_METRICS_ADDR} \
+    go run ./cmd/bridge
+
+check.bridge.metrics:
+	@echo "Checking bridge metrics endpoint..."
+	BRIDGE_METRICS_URL?=http://127.0.0.1:9090/metrics
+	BRIDGE_METRICS_URL=$${BRIDGE_METRICS_URL} ./scripts/check_bridge_metrics.sh

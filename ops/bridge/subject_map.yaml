@@ -1,0 +1,17 @@
+# Canonical -> legacy subject translation used by the bridge.
+# Rules are evaluated longest-prefix first.
+mappings:
+  - source: "dex.sol.swap.raydium"
+    target: "legacy.dex.swap.raydium"
+  - source: "dex.sol.swap.orca"
+    target: "legacy.dex.swap.orca"
+  - source: "dex.sol.swap."
+    target: "legacy.dex.swap."
+  - source: "dex.sol.candle.pool."
+    target: "legacy.dex.candle.pool."
+  - source: "dex.sol.candle.pair."
+    target: "legacy.dex.candle.pair."
+  - source: "dex.sol.pool.snapshot"
+    target: "legacy.dex.pool.snapshot"
+  - source: "dex.sol.debug"
+    drop: true

@@ -1,0 +1,109 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Go test
+        run: go test ./...
+
+      - name: Install NATS CLI
+        run: |
+          go install github.com/nats-io/natscli/nats@latest
+          echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
+
+      - name: Start NATS JetStream
+        run: |
+          docker run -d --name nats -p 4222:4222 nats:2.10-alpine -js
+          for i in {1..20}; do
+            if nc -z 127.0.0.1 4222; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "NATS failed to start" >&2
+          exit 1
+
+      - name: Seed JetStream streams
+        env:
+          NATS_URL: nats://127.0.0.1:4222
+        run: |
+          cat <<'JSON' >/tmp/dex.json
+          {
+            "name": "DEX",
+            "subjects": [
+              "dex.sol.blocks.head",
+              "dex.sol.tx.meta",
+              "dex.sol.*.swap",
+              "dex.sol.pool.snapshot",
+              "dex.sol.candle.pool.*",
+              "dex.sol.candle.pair.*"
+            ],
+            "retention": "limits",
+            "storage": "memory",
+            "discard": "old",
+            "replicas": 1,
+            "duplicate_window": "2m"
+          }
+          JSON
+          cat <<'JSON' >/tmp/legacy.json
+          {
+            "name": "legacy",
+            "subjects": [
+              "legacy.dex.swap.*",
+              "legacy.dex.candle.pool.*",
+              "legacy.dex.candle.pair.*",
+              "legacy.dex.pool.snapshot"
+            ],
+            "retention": "limits",
+            "storage": "memory",
+            "discard": "old",
+            "replicas": 1,
+            "duplicate_window": "2m"
+          }
+          JSON
+          nats stream add --config /tmp/dex.json
+          nats stream add --config /tmp/legacy.json
+
+      - name: Bridge metrics smoke test
+        env:
+          BRIDGE_SOURCE_NATS_URL: nats://127.0.0.1:4222
+          BRIDGE_TARGET_NATS_URL: nats://127.0.0.1:4222
+          BRIDGE_SOURCE_STREAM: DEX
+          BRIDGE_TARGET_STREAM: legacy
+          BRIDGE_SUBJECT_MAP_PATH: ops/bridge/subject_map.yaml
+          BRIDGE_METRICS_ADDR: :9091
+        run: |
+          set -euo pipefail
+          go build -o bridge-bin ./cmd/bridge
+          ./bridge-bin &
+          BRIDGE_PID=$!
+          trap 'kill $BRIDGE_PID 2>/dev/null || true' EXIT
+          for i in {1..20}; do
+            if curl -sf http://127.0.0.1:9091/metrics >/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+          BRIDGE_METRICS_URL=http://127.0.0.1:9091/metrics make check.bridge.metrics
+          kill $BRIDGE_PID
+          wait $BRIDGE_PID || true
+
+      - name: Teardown NATS
+        if: always()
+        run: docker rm -f nats
