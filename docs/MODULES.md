@@ -1,10 +1,10 @@
 # Module Responsibilities
 
 ## Ingestor (`/ingestor`)
-- **geyser/** – Yellowstone client, handles replay window, token auth, reconnect loop.
+- **geyser/** – Yellowstone client & processor (replay window, Raydium swap decoding, JetStream publish path).
 - **helius/** – LaserStream/WS fallback (future stub).
 - **common/** – Slot→timestamp cache, replay markers, shared telemetry helpers.
-- **Outputs:** `BlockHead`, `TxMeta`, program-specific raw data forwarded to decoders.
+- **Outputs:** `BlockHead`, `TxMeta`, canonical `SwapEvent` protobufs via JetStream.
 
 ## Decoder (`/decoder`)
 - **raydium/** – Parses Raydium CLMM instructions/logs into canonical `SwapEvent`.

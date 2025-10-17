@@ -9,4 +9,7 @@ const (
 	MetricBridgeDroppedTotal    = "bridge_dropped_total"
 	MetricBridgePublishErrors   = "bridge_publish_errors_total"
 	MetricBridgeSourceLagSecond = "bridge_source_lag_seconds"
+
+	MetricRaydiumSwapsTotal   = "ingestor_raydium_swaps_total"
+	MetricRaydiumDecodeErrors = "ingestor_raydium_decode_errors_total"
 )

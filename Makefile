@@ -1,4 +1,4 @@
-.PHONY: help bootstrap proto-gen test lint build clean up down ops.jetstream.init ops.jetstream.verify run.bridge check.bridge.metrics
+.PHONY: help bootstrap proto-gen test lint build clean up down ops.jetstream.init ops.jetstream.verify run.bridge check.bridge.metrics run.ingestor.geyser
 
 PROTO_FILES := $(shell find proto -name '*.proto' 2>/dev/null)
 GOBIN := $(shell go env GOPATH)/bin
@@ -19,6 +19,7 @@ help:
 	@echo "  ops.jetstream.init - Initialize JetStream streams and consumers"
 	@echo "  ops.jetstream.verify - Verify JetStream streams and consumers exist"
 	@echo "  run.bridge          - Run the legacy bridge with local subject map"
+	@echo "  run.ingestor.geyser - Run the geyser ingestor (Raydium swaps -> JetStream)"
 	@echo "  check.bridge.metrics - Assert bridge Prometheus metrics respond"
 
 # Bootstrap development environment
@@ -117,8 +118,23 @@ run.bridge:
     BRIDGE_SOURCE_STREAM=$${BRIDGE_SOURCE_STREAM} \
     BRIDGE_TARGET_STREAM=$${BRIDGE_TARGET_STREAM} \
     BRIDGE_SUBJECT_MAP_PATH=$${BRIDGE_SUBJECT_MAP_PATH} \
-    BRIDGE_METRICS_ADDR=$${BRIDGE_METRICS_ADDR} \
-    go run ./cmd/bridge
+	BRIDGE_METRICS_ADDR=$${BRIDGE_METRICS_ADDR} \
+	go run ./cmd/bridge
+
+run.ingestor.geyser:
+	@echo "Starting geyser ingestor..."
+	PROGRAMS_YAML_PATH?=ops/programs.yaml
+	NATS_URL?=nats://127.0.0.1:4222
+	NATS_STREAM?=DEX
+	NATS_SUBJECT_ROOT?=dex.sol
+	INGESTOR_METRICS_ADDR?=:9101
+	@if [ ! -f "$$PROGRAMS_YAML_PATH" ]; then echo "ERROR: programs file $$PROGRAMS_YAML_PATH not found"; exit 1; fi
+	PROGRAMS_YAML_PATH=$${PROGRAMS_YAML_PATH} \
+	NATS_URL=$${NATS_URL} \
+	NATS_STREAM=$${NATS_STREAM} \
+	NATS_SUBJECT_ROOT=$${NATS_SUBJECT_ROOT} \
+	INGESTOR_METRICS_ADDR=$${INGESTOR_METRICS_ADDR} \
+	go run ./cmd/ingestor/geyser
 
 check.bridge.metrics:
 	@echo "Checking bridge metrics endpoint..."

@@ -10,6 +10,12 @@
 - Check Prometheus metrics: `make check.bridge.metrics` (expects the bridge metrics endpoint to be live)
 - Subject mappings live at `ops/bridge/subject_map.yaml`
 
+## Geyser Ingestor
+- Run locally: `make run.ingestor.geyser`
+- Configure program filters via `PROGRAMS_YAML_PATH` (default `ops/programs.yaml`).
+- Set `NATS_URL` / `NATS_STREAM` / `NATS_SUBJECT_ROOT` to control JetStream publishing.
+- Metrics (if enabled) exposed at `INGESTOR_METRICS_ADDR` (default `:9101`).
+
 ## ClickHouse
 - Apply schema (once DDL is committed): `clickhouse-client --queries-file ops/clickhouse/all.sql`
 - Monitor write latency via exported Prometheus metrics (`clickhouse_write_latency_ms_bucket`).

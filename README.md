@@ -47,6 +47,14 @@ flake.nix & default.nix    Nix development shells
 2. Run `make bootstrap` to pull toolchains, install git hooks, and fetch proto deps.
 3. Use `make proto-gen` whenever protobuf contracts change.
 4. Start dependencies locally with `make up` (NATS, ClickHouse, MinIO, Postgres).
+5. Run the geyser ingestor once credentials are set:
+
+   ```bash
+   PROGRAMS_YAML_PATH=ops/programs.yaml \
+   NATS_URL=nats://127.0.0.1:4222 \
+   NATS_STREAM=DEX \
+   go run ./cmd/ingestor/geyser
+   ```
 
 ## Cutover Phases (Summary)
 1. **Dark launch** – run new ingestors + bridge while legacy Rust stack stays live.

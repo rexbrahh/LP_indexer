@@ -13,6 +13,8 @@
 - `bridge_dropped_total{subject}` – messages acknowledged but not forwarded.
 - `bridge_publish_errors_total{subject}` – legacy publish failures.
 - `bridge_source_lag_seconds{subject}` – source stream age observed by the bridge.
+- `ingestor_raydium_swaps_total` – count of Raydium swaps decoded from Geyser.
+- `ingestor_raydium_decode_errors_total` – decoder or publish failures for Raydium flow.
 
 ## Dashboards (planned)
 - Ingestor health (slot lag, error rate, reconnect count).
