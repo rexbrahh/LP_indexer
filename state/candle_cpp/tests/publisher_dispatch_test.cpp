@@ -9,7 +9,7 @@ public:
   void publish(const std::string &pair_id, WindowSize window,
                const Candle &candle) override {
     std::lock_guard<std::mutex> lock(mutex_);
-    last_pair_id_ = pair_id;
+    last_pair_ = pair_id;
     last_window_ = window;
     last_candle_ = candle;
     call_count_++;
@@ -17,7 +17,7 @@ public:
 
   std::string last_pair() const {
     std::lock_guard<std::mutex> lock(mutex_);
-    return last_pair_id_;
+    return last_pair_;
   }
 
   WindowSize last_window() const {

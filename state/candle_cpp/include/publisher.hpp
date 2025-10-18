@@ -6,6 +6,9 @@
 #include <string>
 #include <vector>
 
+struct __natsConnection;
+struct __jsCtx;
+
 namespace candle {
 
 struct JetStreamConfig {
@@ -25,9 +28,6 @@ public:
   virtual void publish(const std::string &pair_id, WindowSize window,
                        const Candle &candle) = 0;
 };
-
-struct natsConnection;
-struct jsCtx;
 
 /// In-memory publisher used for tests and bootstrap scaffolding.
 class InMemoryPublisher : public CandlePublisher {
@@ -57,8 +57,8 @@ private:
   std::string sanitize_token(const std::string &token) const;
 
   JetStreamConfig config_;
-  natsConnection *conn_{nullptr};
-  jsCtx *js_{nullptr};
+  __natsConnection *conn_{nullptr};
+  __jsCtx *js_{nullptr};
   mutable std::mutex mutex_;
 };
 

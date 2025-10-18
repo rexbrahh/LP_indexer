@@ -3,7 +3,11 @@ project(candle_cpp CXX)
 
 include(FetchContent)
 
-find_package(Protobuf REQUIRED)
+get_filename_component(REPO_ROOT "${CMAKE_SOURCE_DIR}/../.." REALPATH)
+set(PROTO_GEN_CPP_DIR "${REPO_ROOT}/gen/cpp")
+
+find_package(Protobuf CONFIG REQUIRED)
+find_package(absl CONFIG REQUIRED)
 
 set(NATS_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(NATS_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
@@ -27,20 +31,24 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -Wpedantic")
 set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -g -O0")
 set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3")
 
-# Include directories
-include_directories(include gen ${Protobuf_INCLUDE_DIRS})
-
 # Source files
 set(CANDLE_SOURCES
     src/fixed_point.cpp
     src/candle_worker.cpp
     src/publisher.cpp
-    gen/dex/sol/v1/core.pb.cc
+    ${PROTO_GEN_CPP_DIR}/dex/sol/v1/core.pb.cc
 )
 
 # Create library
 add_library(candle_cpp STATIC ${CANDLE_SOURCES})
-target_link_libraries(candle_cpp PUBLIC protobuf::libprotobuf nats_static)
+target_include_directories(candle_cpp
+  PUBLIC
+    include
+    ${PROTO_GEN_CPP_DIR}
+  PRIVATE
+    ${natsc_SOURCE_DIR}/src
+)
+target_link_libraries(candle_cpp PUBLIC protobuf::libprotobuf absl::strings nats_static)
 
 # Fetch GoogleTest
 FetchContent_Declare(

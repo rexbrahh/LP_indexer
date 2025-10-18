@@ -8,7 +8,7 @@
 #include <stdexcept>
 #include <utility>
 
-#include <nats/nats.h>
+#include <nats.h>
 
 namespace candle {
 
@@ -167,20 +167,30 @@ void JetStreamPublisher::publish(const std::string &pair_id, WindowSize window,
     throw std::runtime_error("failed to serialize candle protobuf");
   }
 
+  if (payload.size() > static_cast<size_t>(std::numeric_limits<int>::max())) {
+    throw std::runtime_error("payload too large for js_Publish");
+  }
+
   jsPubAck *ack = nullptr;
+  jsErrCode err_code = static_cast<jsErrCode>(0);
   std::string subject = build_subject(pair_id, window);
   std::string msg_id = subject + ":" + std::to_string(candle.open_time);
 
   jsPubOptions opts;
   jsPubOptions_Init(&opts);
-  opts.Stream = config_.stream.c_str();
+  if (!config_.stream.empty()) {
+    opts.ExpectStream = config_.stream.c_str();
+  }
   opts.MsgId = msg_id.c_str();
+  if (config_.publish_timeout.count() > 0) {
+    opts.MaxWait = config_.publish_timeout.count();
+  }
 
   natsStatus status;
   {
     std::lock_guard<std::mutex> lock(mutex_);
-    status = js_Publish(js_, subject.c_str(), payload.data(), payload.size(),
-                        &ack, &opts);
+    status = js_Publish(&ack, js_, subject.c_str(), payload.data(),
+                        static_cast<int>(payload.size()), &opts, &err_code);
   }
 
   if (ack != nullptr) {
@@ -188,7 +198,8 @@ void JetStreamPublisher::publish(const std::string &pair_id, WindowSize window,
   }
 
   if (status != NATS_OK) {
-    throw std::runtime_error("js_Publish failed: " + natsErrorMessage(status));
+    throw std::runtime_error("js_Publish failed: " + natsErrorMessage(status) +
+                             ", jsErrCode=" + std::to_string(err_code));
   }
 }
 
