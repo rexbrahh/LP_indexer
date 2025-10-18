@@ -2,17 +2,16 @@ package helius
 
 import (
 	"context"
-	"errors"
+	"fmt"
 	"sync"
 	"time"
 
-	dexv1 "github.com/rexbrahh/lp-indexer/gen/go/dex/sol/v1"
-)
+	"github.com/mr-tron/base58/base58"
 
-// ErrNotImplemented is emitted until the LaserStream / WebSocket integrations
-// are wired up. Downstream callers can treat this as a transient failure and
-// remain on the primary ingestor.
-var ErrNotImplemented = errors.New("helius LaserStream client not yet implemented")
+	dexv1 "github.com/rexbrahh/lp-indexer/gen/go/dex/sol/v1"
+
+	pb "github.com/rpcpool/yellowstone-grpc/examples/golang/proto"
+)
 
 // Update is a canonical container for the protobuf contracts emitted by the
 // fallback ingestor. Exactly one of the pointer fields should be non-nil.
@@ -43,7 +42,14 @@ type Client struct {
 	mu     sync.RWMutex
 	health HealthSnapshot
 
-	cancel context.CancelFunc
+	cancel    context.CancelFunc
+	newStream func(*Config) (streamClient, error)
+}
+
+type streamClient interface {
+	Connect() error
+	Subscribe(startSlot uint64) (<-chan *pb.SubscribeUpdate, <-chan error)
+	Close() error
 }
 
 // NewClient validates the configuration and prepares a Helius client.
@@ -55,6 +61,9 @@ func NewClient(cfg *Config) (*Client, error) {
 		cfg: cfg,
 		health: HealthSnapshot{
 			Healthy: false,
+		},
+		newStream: func(cfg *Config) (streamClient, error) {
+			return NewStreamClient(cfg)
 		},
 	}, nil
 }
@@ -107,19 +116,143 @@ func (c *Client) run(ctx context.Context, startSlot uint64, updates chan<- Updat
 	defer close(updates)
 	defer close(errs)
 
-	// Mark the client as unhealthy until a transport is wired in.
+	stream, err := c.newStream(c.cfg)
+	if err != nil {
+		select {
+		case errs <- fmt.Errorf("init helius stream client: %w", err):
+		case <-ctx.Done():
+		}
+		return
+	}
+	defer stream.Close()
+
+	if err := stream.Connect(); err != nil {
+		select {
+		case errs <- fmt.Errorf("connect helius stream: %w", err):
+		case <-ctx.Done():
+		}
+		return
+	}
+
+	updateCh, errCh := stream.Subscribe(startSlot)
+
 	c.setHealth(func(s *HealthSnapshot) {
-		s.Healthy = false
-		s.Source = "uninitialised"
+		s.Healthy = true
+		s.Source = "grpc"
+		s.LastHeartbeat = time.Now()
 	})
 
-	// TODO: Implement LaserStream dialling, message decoding, replay, and
-	// websocket fallback. For now we emit a sentinel error so callers keep the
-	// primary source active.
-	select {
-	case <-ctx.Done():
-		return
+	for {
+		select {
+		case <-ctx.Done():
+			c.setHealth(func(s *HealthSnapshot) {
+				s.Healthy = false
+			})
+			return
+		case err, ok := <-errCh:
+			if !ok || err == nil {
+				continue
+			}
+			c.setHealth(func(s *HealthSnapshot) {
+				s.Healthy = false
+				s.Source = "grpc"
+			})
+			select {
+			case errs <- err:
+			default:
+			}
+		case update, ok := <-updateCh:
+			if !ok {
+				c.setHealth(func(s *HealthSnapshot) {
+					s.Healthy = false
+				})
+				return
+			}
+			slot := slotFromUpdate(update)
+			c.setHealth(func(s *HealthSnapshot) {
+				s.Healthy = true
+				s.Source = "grpc"
+				s.LastHeartbeat = time.Now()
+				if slot > 0 {
+					s.LastSlot = slot
+				}
+			})
+			c.emitUpdate(ctx, update, updates)
+		}
+	}
+}
+
+func (c *Client) emitUpdate(ctx context.Context, in *pb.SubscribeUpdate, out chan<- Update) {
+	switch u := in.GetUpdateOneof().(type) {
+	case *pb.SubscribeUpdate_BlockMeta:
+		if u.BlockMeta == nil {
+			return
+		}
+		head := &dexv1.BlockHead{
+			ChainId: 501,
+			Slot:    u.BlockMeta.GetSlot(),
+			Status:  "confirmed",
+		}
+		if ts := u.BlockMeta.GetBlockTime(); ts != nil {
+			head.TsSec = uint64(ts.GetTimestamp())
+		}
+		c.sendUpdate(ctx, out, Update{BlockHead: head})
+	case *pb.SubscribeUpdate_Transaction:
+		if update := convertTransaction(u.Transaction); update != nil {
+			c.sendUpdate(ctx, out, *update)
+		}
 	default:
-		errs <- ErrNotImplemented
+		// Ignore other update types for now.
+	}
+}
+
+func (c *Client) sendUpdate(ctx context.Context, out chan<- Update, update Update) {
+	select {
+	case out <- update:
+	case <-ctx.Done():
+	}
+}
+
+func convertTransaction(tx *pb.SubscribeUpdateTransaction) *Update {
+	if tx == nil {
+		return nil
+	}
+	info := tx.GetTransaction()
+	if info == nil {
+		return nil
+	}
+	meta := info.GetMeta()
+	if meta == nil {
+		return nil
+	}
+	signature := base58.Encode(info.GetSignature())
+	update := &Update{
+		TxMeta: &dexv1.TxMeta{
+			ChainId: 501,
+			Slot:    tx.GetSlot(),
+			Sig:     signature,
+			Success: meta.GetErr() == nil,
+			CuUsed:  meta.GetComputeUnitsConsumed(),
+			CuPrice: 0,
+			LogMsgs: meta.GetLogMessages(),
+		},
+	}
+	return update
+}
+
+func slotFromUpdate(update *pb.SubscribeUpdate) uint64 {
+	switch u := update.GetUpdateOneof().(type) {
+	case *pb.SubscribeUpdate_Slot:
+		return u.Slot.GetSlot()
+	case *pb.SubscribeUpdate_Account:
+		return u.Account.GetSlot()
+	case *pb.SubscribeUpdate_Transaction:
+		return u.Transaction.GetSlot()
+	case *pb.SubscribeUpdate_Block:
+		return u.Block.GetSlot()
+	case *pb.SubscribeUpdate_BlockMeta:
+		return u.BlockMeta.GetSlot()
+	default:
+		return 0
 	}
 }
