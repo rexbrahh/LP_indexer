@@ -1,4 +1,4 @@
-.PHONY: help bootstrap proto-gen test lint build clean up down ops.jetstream.init ops.jetstream.verify run.bridge check.bridge.metrics run.ingestor.geyser
+.PHONY: help bootstrap proto-gen test lint build clean up down ops.jetstream.init ops.jetstream.verify run.bridge check.bridge.metrics run.ingestor.geyser candle-e2e
 
 PROTO_FILES := $(shell find proto -name '*.proto' 2>/dev/null)
 GOBIN := $(shell go env GOPATH)/bin
@@ -20,6 +20,7 @@ help:
 	@echo "  ops.jetstream.verify - Verify JetStream streams and consumers exist"
 	@echo "  run.bridge          - Run the legacy bridge with local subject map"
 	@echo "  run.ingestor.geyser - Run the geyser ingestor (Raydium swaps -> JetStream)"
+	@echo "  candle-e2e         - Run candle replay + ClickHouse validation harness"
 	@echo "  check.bridge.metrics - Assert bridge Prometheus metrics respond"
 
 # Bootstrap development environment
@@ -140,3 +141,6 @@ check.bridge.metrics:
 	@echo "Checking bridge metrics endpoint..."
 	BRIDGE_METRICS_URL?=http://127.0.0.1:9090/metrics
 	BRIDGE_METRICS_URL=$${BRIDGE_METRICS_URL} ./scripts/check_bridge_metrics.sh
+
+candle-e2e:
+	@scripts/run_candle_e2e.sh $(INPUT)
