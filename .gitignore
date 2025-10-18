@@ -23,3 +23,7 @@ result
 .idea/
 .vscode/
 .DS_Store
+
+docs/external/helius/
+docs/external/meteora/
+docs/external/orca-whirlpools/
