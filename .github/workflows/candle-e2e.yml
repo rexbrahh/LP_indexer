@@ -1,0 +1,117 @@
+name: Candle E2E
+
+on:
+  schedule:
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    services:
+      clickhouse:
+        image: clickhouse/clickhouse-server:24
+        ports:
+          - 9000:9000
+        options: >-
+          --health-cmd "clickhouse-client --query 'SELECT 1'" \
+          --health-interval 5s \
+          --health-timeout 5s \
+          --health-retries 12
+      minio:
+        image: minio/minio:RELEASE.2024-03-15T02-23-51Z
+        ports:
+          - 9000:9000
+        env:
+          MINIO_ROOT_USER: minio
+          MINIO_ROOT_PASSWORD: minio123
+        command: server /data
+      nats:
+        image: nats:2.10-alpine
+        ports:
+          - 4222:4222
+        command: -js
+        options: >-
+          --health-cmd "nats-server --version" \
+          --health-interval 5s \
+          --health-timeout 5s \
+          --health-retries 12
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Install dependencies
+        run: go mod download
+
+      - name: Seed ClickHouse schema
+        run: |
+          until clickhouse-client --host 127.0.0.1 --query "SELECT 1"; do sleep 2; done
+          clickhouse-client < ops/clickhouse/all.sql
+
+      - name: Create MinIO bucket
+        run: |
+          pip install --quiet awscli
+          until aws --endpoint-url http://127.0.0.1:9000 s3 ls; do sleep 2; done
+          aws --endpoint-url http://127.0.0.1:9000 s3 mb s3://dex-parquet
+        env:
+          AWS_ACCESS_KEY_ID: minio
+          AWS_SECRET_ACCESS_KEY: minio123
+
+      - name: Seed JetStream streams
+        env:
+          NATS_URL: nats://127.0.0.1:4222
+        run: |
+          go install github.com/nats-io/natscli/nats@latest
+          echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
+          cat <<'JSON' >/tmp/dex.json
+          {
+            "name": "DEX",
+            "subjects": [
+              "dex.sol.blocks.head",
+              "dex.sol.tx.meta",
+              "dex.sol.*.swap",
+              "dex.sol.pool.snapshot",
+              "dex.sol.candle.pool.*",
+              "dex.sol.candle.pair.*"
+            ],
+            "retention": "limits",
+            "storage": "memory",
+            "discard": "old",
+            "replicas": 1,
+            "duplicate_window": "2m"
+          }
+          JSON
+          nats stream add --config /tmp/dex.json
+
+      - name: Run candle harness
+        env:
+          NATS_URL: nats://127.0.0.1:4222
+          NATS_STREAM: DEX
+          SUBJECT_ROOT: dex.sol
+          CLICKHOUSE_DSN: tcp://127.0.0.1:9000
+          CLICKHOUSE_DB: default
+          PARQUET_ENDPOINT: http://127.0.0.1:9000
+          PARQUET_BUCKET: dex-parquet
+          PARQUET_ACCESS_KEY: minio
+          PARQUET_SECRET_KEY: minio123
+        run: |
+          make candle-e2e INPUT=fixtures/swaps_sample.csv
+
+      - name: Verify ClickHouse rows
+        run: |
+          clickhouse-client --query "SELECT count() FROM default.candles"
+
+      - name: Verify Parquet object
+        run: |
+          aws --endpoint-url http://127.0.0.1:9000 s3 ls s3://dex-parquet --recursive
+        env:
+          AWS_ACCESS_KEY_ID: minio
+          AWS_SECRET_ACCESS_KEY: minio123
