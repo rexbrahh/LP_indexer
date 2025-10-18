@@ -10,6 +10,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 
+	meteora "github.com/rexbrahh/lp-indexer/decoder/meteora"
+	orcawhirlpool "github.com/rexbrahh/lp-indexer/decoder/orca_whirlpool"
 	ray "github.com/rexbrahh/lp-indexer/decoder/raydium"
 	dexv1 "github.com/rexbrahh/lp-indexer/gen/go/dex/sol/v1"
 	"github.com/rexbrahh/lp-indexer/ingestor/common"
@@ -34,6 +36,7 @@ type Processor struct {
 	poolConfig map[string]string
 	poolFees   map[string]uint16
 	configFees map[string]uint16
+	orcaPools  map[string]*internal.OrcaPoolInfo
 }
 
 // NewProcessor initialises a Processor with optional metrics registration.
@@ -48,6 +51,7 @@ func NewProcessor(publisher SwapPublisher, cache common.SlotTimeCache, reg prome
 		poolConfig: make(map[string]string),
 		poolFees:   make(map[string]uint16),
 		configFees: make(map[string]uint16),
+		orcaPools:  make(map[string]*internal.OrcaPoolInfo),
 	}
 }
 
@@ -72,17 +76,15 @@ func (p *Processor) handleTransaction(ctx context.Context, tx *pb.SubscribeUpdat
 	if tx == nil {
 		return nil
 	}
-	events, err := p.decodeRaydiumSwaps(tx)
+	events, err := p.decodeSwaps(tx)
 	if err != nil {
-		p.metrics.errors.Inc()
 		return err
 	}
 	for _, ev := range events {
 		if err := p.publisher.PublishSwap(ctx, ev); err != nil {
-			p.metrics.errors.Inc()
+			p.metrics.recordError(ev.GetProgramId())
 			return fmt.Errorf("publish swap: %w", err)
 		}
-		p.metrics.swaps.Inc()
 	}
 	return nil
 }
@@ -97,18 +99,7 @@ func (p *Processor) handleBlockMeta(meta *pb.SubscribeUpdateBlockMeta) {
 	}
 }
 
-func (p *Processor) handleAccount(account *pb.SubscribeUpdateAccount) {
-	if account == nil || account.Account == nil {
-		return
-	}
-	info := account.Account
-	owner := base58.Encode(info.GetOwner())
-	if owner != ray.ProgramID {
-		return
-	}
-	pubkey := base58.Encode(info.GetPubkey())
-	data := info.GetData()
-
+func (p *Processor) handleRaydiumAccount(pubkey string, data []byte) {
 	if internal.HasPoolDiscriminator(data) {
 		if cfg, err := internal.DecodeRaydiumPool(data); err == nil {
 			configKey := base58.Encode(cfg)
@@ -164,7 +155,28 @@ func (p *Processor) handleAccount(account *pb.SubscribeUpdateAccount) {
 	}
 }
 
-func (p *Processor) decodeRaydiumSwaps(tx *pb.SubscribeUpdateTransaction) ([]*dexv1.SwapEvent, error) {
+func (p *Processor) handleAccount(account *pb.SubscribeUpdateAccount) {
+	if account == nil || account.Account == nil {
+		return
+	}
+	info := account.Account
+	owner := base58.Encode(info.GetOwner())
+	pubkey := base58.Encode(info.GetPubkey())
+	data := info.GetData()
+
+	switch owner {
+	case ray.ProgramID:
+		p.handleRaydiumAccount(pubkey, data)
+	case orcawhirlpool.WhirlpoolProgramID:
+		if poolInfo, err := internal.DecodeOrcaPool(data); err == nil {
+			p.orcaPools[pubkey] = poolInfo
+		}
+	default:
+		return
+	}
+}
+
+func (p *Processor) decodeSwaps(tx *pb.SubscribeUpdateTransaction) ([]*dexv1.SwapEvent, error) {
 	info := tx.GetTransaction()
 	if info == nil {
 		return nil, nil
@@ -187,22 +199,7 @@ func (p *Processor) decodeRaydiumSwaps(tx *pb.SubscribeUpdateTransaction) ([]*de
 		accountStrs[i] = base58.Encode(key)
 	}
 
-	programIndex := -1
-	for idx, key := range accountStrs {
-		if key == ray.ProgramID {
-			programIndex = idx
-			break
-		}
-	}
-	if programIndex < 0 {
-		return nil, nil
-	}
-
 	vaults := extractVaultBalances(meta)
-	if len(vaults) == 0 {
-		return nil, nil
-	}
-
 	signature := encodeSignature(txMsg.GetSignatures())
 	slot := tx.GetSlot()
 	timestamp := lookupSlotTimestamp(p.slotCache, slot)
@@ -210,17 +207,48 @@ func (p *Processor) decodeRaydiumSwaps(tx *pb.SubscribeUpdateTransaction) ([]*de
 
 	var swaps []*dexv1.SwapEvent
 	for _, instr := range message.GetInstructions() {
-		if int(instr.GetProgramIdIndex()) != programIndex {
+		programIdx := int(instr.GetProgramIdIndex())
+		if programIdx >= len(accountStrs) {
 			continue
 		}
-		ev, err := p.buildRaydiumSwap(signature, slot, timestamp, index, instr, accountStrs, vaults)
-		if err != nil {
-			return nil, fmt.Errorf("decode raydium swap: %w", err)
-		}
-		if ev != nil {
-			swaps = append(swaps, ev)
+		programID := accountStrs[programIdx]
+
+		switch programID {
+		case ray.ProgramID:
+			ev, err := p.buildRaydiumSwap(signature, slot, timestamp, index, instr, accountStrs, vaults)
+			if err != nil {
+				p.metrics.recordError(ray.ProgramID)
+				return nil, fmt.Errorf("decode raydium swap: %w", err)
+			}
+			if ev != nil {
+				p.metrics.recordSwap(ray.ProgramID)
+				swaps = append(swaps, ev)
+			}
+		case orcawhirlpool.WhirlpoolProgramID:
+			ev, err := p.buildOrcaSwap(signature, slot, timestamp, index, instr, accountStrs, vaults)
+			if err != nil {
+				p.metrics.recordError(orcawhirlpool.WhirlpoolProgramID)
+				return nil, fmt.Errorf("decode orca swap: %w", err)
+			}
+			if ev != nil {
+				p.metrics.recordSwap(orcawhirlpool.WhirlpoolProgramID)
+				swaps = append(swaps, ev)
+			}
+		default:
+			if kind, ok := meteora.ProgramKindForID(programID); ok {
+				ev, err := p.buildMeteoraSwap(signature, slot, timestamp, index, instr, accountStrs, meta, programID, kind)
+				if err != nil {
+					p.metrics.recordError(programID)
+					return nil, fmt.Errorf("decode meteora swap: %w", err)
+				}
+				if ev != nil {
+					p.metrics.recordSwap(programID)
+					swaps = append(swaps, ev)
+				}
+			}
 		}
 	}
+
 	return swaps, nil
 }
 
@@ -265,6 +293,124 @@ func (p *Processor) buildRaydiumSwap(signature string, slot uint64, timestamp in
 
 	feeBps := p.poolFees[pool]
 	return convertRaydiumSwap(rayEvent, slot, timestamp, signature, index, feeBps), nil
+}
+
+func (p *Processor) buildOrcaSwap(signature string, slot uint64, timestamp int64, index uint64, instr *pb.CompiledInstruction, accountStrs []string, vaults map[string][]*tokenBalance) (*dexv1.SwapEvent, error) {
+	accounts := instr.GetAccounts()
+	if len(accounts) < 3 {
+		return nil, nil
+	}
+	poolIdx := int(accounts[2])
+	if poolIdx >= len(accountStrs) {
+		return nil, nil
+	}
+	poolID := accountStrs[poolIdx]
+	poolInfo, ok := p.orcaPools[poolID]
+	if !ok {
+		return nil, nil
+	}
+
+	balances := vaults[poolID]
+	if len(balances) == 0 {
+		return nil, nil
+	}
+
+	var vaultA, vaultB *tokenBalance
+	for _, tb := range balances {
+		if tb.mint == poolInfo.TokenMintA {
+			vaultA = tb
+		} else if tb.mint == poolInfo.TokenMintB {
+			vaultB = tb
+		}
+	}
+	if vaultA == nil || vaultB == nil {
+		return nil, nil
+	}
+
+	deltaA := int64(vaultA.post) - int64(vaultA.pre)
+	deltaB := int64(vaultB.post) - int64(vaultB.pre)
+	if deltaA == 0 && deltaB == 0 {
+		return nil, nil
+	}
+
+	event := &dexv1.SwapEvent{
+		ChainId:     chainIDSolana,
+		Slot:        slot,
+		Sig:         signature,
+		Index:       uint32(index),
+		ProgramId:   orcawhirlpool.WhirlpoolProgramID,
+		PoolId:      poolID,
+		MintBase:    poolInfo.TokenMintA,
+		MintQuote:   poolInfo.TokenMintB,
+		DecBase:     uint32(vaultA.decimals),
+		DecQuote:    uint32(vaultB.decimals),
+		FeeBps:      uint32(poolInfo.FeeRate / 100),
+		Provisional: true,
+	}
+	if deltaA < 0 && deltaB > 0 {
+		// Vault A lost tokens, vault B gained => B->A swap
+		event.BaseOut = uint64(-deltaA)
+		event.QuoteIn = uint64(deltaB)
+	} else {
+		// default assume A->B
+		if deltaA > 0 {
+			event.BaseIn = uint64(deltaA)
+		}
+		if deltaB < 0 {
+			event.QuoteOut = uint64(-deltaB)
+		}
+	}
+
+	return event, nil
+}
+
+func (p *Processor) buildMeteoraSwap(signature string, slot uint64, timestamp int64, index uint64, instr *pb.CompiledInstruction, accountStrs []string, meta *pb.TransactionStatusMeta, programID string, kind meteora.PoolKind) (*dexv1.SwapEvent, error) {
+	ctx := &meteora.InstructionContext{
+		Slot:                slot,
+		Signature:           signature,
+		Accounts:            accountStrs,
+		InstructionAccounts: instr.GetAccounts(),
+		PreTokenBalances:    meta.GetPreTokenBalances(),
+		PostTokenBalances:   meta.GetPostTokenBalances(),
+		ProgramID:           programID,
+		Kind:                kind,
+	}
+	if timestamp != 0 {
+		ctx.Timestamp = time.Unix(timestamp, 0)
+	}
+
+	event, err := meteora.DecodeSwapEvent(instr.GetData(), ctx)
+	if err != nil {
+		return nil, err
+	}
+	if event == nil {
+		return nil, nil
+	}
+
+	proto := &dexv1.SwapEvent{
+		ChainId:     chainIDSolana,
+		Slot:        slot,
+		Sig:         signature,
+		Index:       uint32(index),
+		ProgramId:   programID,
+		PoolId:      event.Pool,
+		MintBase:    event.MintBase,
+		MintQuote:   event.MintQuote,
+		DecBase:     event.DecBase,
+		DecQuote:    event.DecQuote,
+		FeeBps:      event.FeeBps,
+		Provisional: true,
+	}
+
+	if event.BaseDecreased {
+		proto.BaseOut = event.BaseAmount
+		proto.QuoteIn = event.QuoteAmount
+	} else {
+		proto.BaseIn = event.BaseAmount
+		proto.QuoteOut = event.QuoteAmount
+	}
+
+	return proto, nil
 }
 
 func convertRaydiumSwap(ev *ray.SwapEvent, slot uint64, timestamp int64, signature string, index uint64, feeBps uint16) *dexv1.SwapEvent {
@@ -424,8 +570,12 @@ func lookupSlotTimestamp(cache common.SlotTimeCache, slot uint64) int64 {
 }
 
 type processorMetrics struct {
-	swaps  prometheus.Counter
-	errors prometheus.Counter
+	raydiumSwaps  prometheus.Counter
+	raydiumErrors prometheus.Counter
+	orcaSwaps     prometheus.Counter
+	orcaErrors    prometheus.Counter
+	meteoraSwaps  prometheus.Counter
+	meteoraErrors prometheus.Counter
 }
 
 func newProcessorMetrics(reg prometheus.Registerer) *processorMetrics {
@@ -433,17 +583,73 @@ func newProcessorMetrics(reg prometheus.Registerer) *processorMetrics {
 		reg = prometheus.NewRegistry()
 	}
 	return &processorMetrics{
-		swaps: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+		raydiumSwaps: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Namespace: "dex",
 			Subsystem: "geyser",
 			Name:      observability.MetricRaydiumSwapsTotal,
 			Help:      "Total Raydium swaps decoded from geyser transactions.",
 		}),
-		errors: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+		raydiumErrors: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Namespace: "dex",
 			Subsystem: "geyser",
 			Name:      observability.MetricRaydiumDecodeErrors,
 			Help:      "Raydium swap decode or publish errors.",
 		}),
+		orcaSwaps: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Namespace: "dex",
+			Subsystem: "geyser",
+			Name:      observability.MetricOrcaSwapsTotal,
+			Help:      "Total Orca swaps decoded from geyser transactions.",
+		}),
+		orcaErrors: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Namespace: "dex",
+			Subsystem: "geyser",
+			Name:      observability.MetricOrcaDecodeErrors,
+			Help:      "Orca swap decode or publish errors.",
+		}),
+		meteoraSwaps: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Namespace: "dex",
+			Subsystem: "geyser",
+			Name:      observability.MetricMeteoraSwapsTotal,
+			Help:      "Total Meteora swaps decoded from geyser transactions.",
+		}),
+		meteoraErrors: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Namespace: "dex",
+			Subsystem: "geyser",
+			Name:      observability.MetricMeteoraDecodeErrors,
+			Help:      "Meteora swap decode or publish errors.",
+		}),
+	}
+}
+
+func (m *processorMetrics) recordSwap(programID string) {
+	if m == nil {
+		return
+	}
+	switch programID {
+	case ray.ProgramID:
+		m.raydiumSwaps.Inc()
+	case orcawhirlpool.WhirlpoolProgramID:
+		m.orcaSwaps.Inc()
+	default:
+		if _, ok := meteora.ProgramKindForID(programID); ok {
+			m.meteoraSwaps.Inc()
+		}
+	}
+}
+
+func (m *processorMetrics) recordError(programID string) {
+	if m == nil {
+		return
+	}
+	switch programID {
+	case ray.ProgramID:
+		m.raydiumErrors.Inc()
+	case orcawhirlpool.WhirlpoolProgramID:
+		m.orcaErrors.Inc()
+	default:
+		if _, ok := meteora.ProgramKindForID(programID); ok {
+			m.meteoraErrors.Inc()
+		}
 	}
 }

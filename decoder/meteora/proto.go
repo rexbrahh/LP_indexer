@@ -1,10 +1,6 @@
 package meteora
 
-import (
-	dexv1 "github.com/rexbrahh/lp-indexer/gen/go/dex/sol/v1"
-)
-
-const solanaChainID = 501
+import dexv1 "github.com/rexbrahh/lp-indexer/gen/go/dex/sol/v1"
 
 // ToProto projects the swap event into the canonical protobuf message used by
 // downstream publishers. Fields that are not yet populated by the decoder are
@@ -14,27 +10,34 @@ func (e *SwapEvent) ToProto() *dexv1.SwapEvent {
 		return nil
 	}
 
+	programID := e.ProgramID
+	if programID == "" {
+		programID = "cpamdpZCGKUy5JxQXB4dcpGPiikHawvSWAd6mEn1sGG"
+	}
+
 	msg := &dexv1.SwapEvent{
-		ChainId: solanaChainID,
+		ChainId: 501,
 		Slot:    e.Slot,
 		Sig:     e.Signature,
 
-		ProgramId: MeteoraProgramID,
+		ProgramId: programID,
 		PoolId:    e.Pool,
 
 		MintBase:    e.MintBase,
 		MintQuote:   e.MintQuote,
 		DecBase:     e.DecBase,
 		DecQuote:    e.DecQuote,
-		BaseIn:      0,
-		BaseOut:     0,
-		QuoteIn:     0,
-		QuoteOut:    0,
 		FeeBps:      e.FeeBps,
 		Provisional: true,
 	}
 
-	// DLMM/CPMM reserve information will be populated once the decoder captures
-	// those values from the instruction/log stream.
+	if e.BaseDecreased {
+		msg.BaseOut = e.BaseAmount
+		msg.QuoteIn = e.QuoteAmount
+	} else {
+		msg.BaseIn = e.BaseAmount
+		msg.QuoteOut = e.QuoteAmount
+	}
+
 	return msg
 }

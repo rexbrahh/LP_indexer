@@ -18,7 +18,7 @@ func TestSwapEventToProto(t *testing.T) {
 	if msg == nil {
 		t.Fatal("expected proto message, got nil")
 	}
-	if msg.GetChainId() != solanaChainID {
+	if msg.GetChainId() != 501 {
 		t.Fatalf("unexpected chain id %d", msg.GetChainId())
 	}
 	if msg.GetPoolId() != "pool" {
