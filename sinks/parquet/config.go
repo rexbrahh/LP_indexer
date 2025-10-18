@@ -27,6 +27,8 @@ type Config struct {
 	SecretKey     string
 	Prefix        string
 	FlushInterval time.Duration
+	BatchRows     int
+	Region        string
 }
 
 // DefaultConfig sets optional fields to sensible defaults.
@@ -34,6 +36,8 @@ func DefaultConfig() Config {
 	return Config{
 		Prefix:        defaultPrefix,
 		FlushInterval: defaultFlushInterval,
+		BatchRows:     5000,
+		Region:        "us-east-1",
 	}
 }
 
@@ -56,6 +60,12 @@ func (c Config) Validate() error {
 	}
 	if c.Prefix == "" {
 		return fmt.Errorf("object prefix cannot be empty")
+	}
+	if c.BatchRows <= 0 {
+		return fmt.Errorf("batch rows must be positive")
+	}
+	if c.Region == "" {
+		return fmt.Errorf("region must be set")
 	}
 	return nil
 }
@@ -84,6 +94,16 @@ func FromEnv() (Config, error) {
 			return Config{}, fmt.Errorf("invalid %s: %w", envFlushIntervalS, err)
 		}
 		cfg.FlushInterval = time.Duration(seconds) * time.Second
+	}
+	if v := os.Getenv("PARQUET_BATCH_ROWS"); v != "" {
+		rows, err := strconv.Atoi(v)
+		if err != nil {
+			return Config{}, fmt.Errorf("invalid PARQUET_BATCH_ROWS: %w", err)
+		}
+		cfg.BatchRows = rows
+	}
+	if v := os.Getenv("PARQUET_REGION"); v != "" {
+		cfg.Region = v
 	}
 	return cfg, cfg.Validate()
 }

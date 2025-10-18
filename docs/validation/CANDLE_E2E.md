@@ -39,6 +39,9 @@ go run ./cmd/candles
 
 # 6. Validate persisted candles
 clickhouse-client --query "SELECT count() FROM default.candles WHERE pool_id='RAYDIUM_POOL'"
+
+# Optional: run scripted harness (requires running NATS & ClickHouse)
+scripts/run_candle_e2e.sh
 ```
 
 ## Expected Result
