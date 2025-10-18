@@ -1,0 +1,4 @@
+# pair_id,timestamp,price_q32,base_amount,quote_amount
+SOL_USDC,1700000000,100.0,10.0,1000.0
+SOL_USDC,1700000030,101.5,5.0,507.5
+SOL_USDC,1700000065,102.0,3.0,306.0

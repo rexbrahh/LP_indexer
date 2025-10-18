@@ -12,7 +12,7 @@ This harness exercises the end-to-end candle flow: synthetic swaps feed the C++ 
 
 1. **NATS JetStream** (`nats:2.10`) hosting the `DEX` stream
 2. **ClickHouse** (`clickhouse/clickhouse-server:24`) for persistence
-3. **C++ candle engine driver** that replays recorded swap events via `CandleWorker`
+3. **C++ candle engine driver** (`candle_replay`) that replays recorded swap events via `CandleWorker`
 4. **Go bridge** (`go run ./cmd/candles`) consuming JetStream candles and writing to ClickHouse
 5. **Validation query** that checks expected rows in ClickHouse
 
@@ -29,7 +29,7 @@ make clickhouse-init   # runs ops/clickhouse/all.sql against local instance
 cmake -S state/candle_cpp -B build/candle_cpp && cmake --build build/candle_cpp
 
 # 4. Replay sample swaps into the candle engine
-./build/candle_cpp/candle_replay --input fixtures/swaps_raydium.json \
+./build/candle_cpp/candle_replay --input fixtures/swaps_sample.csv \
   --nats-url nats://127.0.0.1:4222 --subject-root dex.sol
 
 # 5. Run the Go candle bridge

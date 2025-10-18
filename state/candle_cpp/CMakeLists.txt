@@ -68,3 +68,6 @@ add_test(NAME candle_finalize_test COMMAND candle_finalize_test)
 add_executable(candle_publisher_dispatch_test tests/publisher_dispatch_test.cpp)
 target_link_libraries(candle_publisher_dispatch_test candle_cpp GTest::gtest GTest::gtest_main pthread)
 add_test(NAME candle_publisher_dispatch_test COMMAND candle_publisher_dispatch_test)
+
+add_executable(candle_replay tools/candle_replay.cpp)
+target_link_libraries(candle_replay candle_cpp protobuf::libprotobuf nats_static)

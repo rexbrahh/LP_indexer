@@ -14,11 +14,11 @@ The candle engine ingests normalized DEX swap events and maintains stateful cand
    - Main entry point for processing trade events
    - Manages sharding of trading pairs across multiple shards for lock contention reduction
    - Routes incoming trades to appropriate shard based on consistent hashing
-   - Emits candles via the pluggable publisher interface (defaults to in-memory sink; NATS integration pending)
+   - Emits candles via the pluggable publisher interface (in-memory or JetStream)
 2. **Publisher** (`publisher.hpp`, `publisher.cpp`)
-   - Abstract interface for downstream sinks (NATS, ClickHouse, Parquet)
+   - Abstract interface for downstream sinks (JetStream today; ClickHouse/Parquet forthcoming)
    - Default implementation stores emitted candles in-memory for tests and local inspection
-   - Future implementations will serialize to `dex.sol.v1.Candle` protobufs and forward to JetStream
+   - `JetStreamPublisher` serializes `dex.sol.v1.Candle` protobufs and forwards to JetStream
 
 3. **Shard** (defined in `candle_worker.hpp`)
    - Owns a subset of trading pairs' candle windows
@@ -118,66 +118,11 @@ Each `CandleWindow` maintains a `last_trade_time` watermark:
 
 ### Current Implementation (Phase 1)
 
-**Synchronous Processing:**
-- `CandleWorker::on_trade()` processes trades **synchronously** in the caller's thread
-- Each trade update:
-  1. Hashes `pair_id` to determine shard index
-  2. Acquires shard mutex
-  3. Gets or creates 6 CandleWindow objects for the pair
-  4. Releases shard mutex
-  5. For each window: acquires window mutex, updates candle, releases mutex
-  6. Updates `last_trade_time` watermark
+### Asynchronous Processing (Current)
 
-**Timing Wheel (Finalization Thread):**
-- Background thread runs `finalize_loop()` every 1 second
-- Iterates through all shards/pairs/windows
-- Calls `finalize_old_candles(watermark)` to finalize closed windows
-- Emits finalized candles to in-memory sink (provisional: will be NATS later)
-
-**Lock Granularity:**
-- **Shard-level mutex:** Protects the `windows` map during pair lookup/creation
-- **Window-level mutex:** Protects individual `candles` map during updates and finalization
-- **Emitted candles mutex:** Protects the in-memory sink for emitted candles
-- Minimizes contention: different pairs in same shard can update windows in parallel after initial lookup
-
-### Planned Implementation (Phase 2)
-
-**Asynchronous Thread Pool:**
-```
-[Upstream Decoder]
-       ↓ (produces trade events)
-[Lock-Free SPSC Queue per Shard] (bounded ring buffers)
-       ↓
-[Worker Thread Pool] (1 thread per shard)
-       ↓ (processes trades from queue)
-[CandleWindow Updates]
-       ↓ (on window close)
-[emit_candle() → NATS JetStream]
-```
-
-**Components:**
-1. **Per-Shard Lock-Free Queue**
-   - Single-producer (upstream decoder), single-consumer (shard worker thread)
-   - Bounded queue (e.g., 16384 slots) with backpressure to decoder
-   - Trade events serialized as: `{pair_id, timestamp, price, base_amt, quote_amt}`
-
-2. **Worker Thread Pool**
-   - One dedicated thread per shard (default: 16 threads for 16 shards)
-   - Each thread:
-     - Polls its shard's queue (busy-wait or futex-based signaling)
-     - Processes trades in FIFO order
-     - Detects window closes (current trade timestamp >= next window boundary)
-     - Calls `emit_candle()` for closed windows
-
-3. **Candle Emission**
-   - Worker thread packages closed candle into protobuf
-   - Publishes to NATS JetStream subject: `dex.sol.candles.{pair_id}.{window_size}`
-   - Sets `Msg-Id: "501:{slot}:{sig}:{index}"` for exactly-once delivery
-
-**Benefits:**
-- Decouples upstream decoder (Go) from C++ processing latency
-- Eliminates cross-shard lock contention
-- Scales to ~100k trades/sec with single-digit millisecond latency
+- Each shard owns a bounded queue; `CandleWorker::on_trade()` enqueues events and returns immediately.
+- Dedicated worker threads per shard drain the queue, update windows, and emit candles.
+- Finalization timing wheel continues to run every second to finalize closed windows and publish via the configured publisher.
 
 ## Fixed-Point Arithmetic (Q32.32)
 
