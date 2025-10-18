@@ -12,4 +12,8 @@ const (
 
 	MetricRaydiumSwapsTotal   = "ingestor_raydium_swaps_total"
 	MetricRaydiumDecodeErrors = "ingestor_raydium_decode_errors_total"
+	MetricOrcaSwapsTotal      = "ingestor_orca_swaps_total"
+	MetricOrcaDecodeErrors    = "ingestor_orca_decode_errors_total"
+	MetricMeteoraSwapsTotal   = "ingestor_meteora_swaps_total"
+	MetricMeteoraDecodeErrors = "ingestor_meteora_decode_errors_total"
 )

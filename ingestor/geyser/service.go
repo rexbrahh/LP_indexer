@@ -22,6 +22,7 @@ type ClientInterface interface {
 	Connect() error
 	Subscribe(startSlot uint64) (<-chan *pb.SubscribeUpdate, <-chan error)
 	Close() error
+	Name() string
 }
 
 // Service wires the geyser client, processor, and publisher together.
@@ -45,24 +46,17 @@ func NewService(geyserCfg *Config, natsCfg natsx.Config, metricsAddr string) (*S
 		return nil, fmt.Errorf("init geyser client: %w", err)
 	}
 
-	publisher, err := natsx.NewPublisher(natsCfg)
+	processor, _, server, stopCh, err := setupPipeline(natsCfg, metricsAddr)
 	if err != nil {
-		return nil, fmt.Errorf("init nats publisher: %w", err)
+		return nil, err
 	}
-
-	registry := prometheus.NewRegistry()
-	registry.MustRegister(collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
-	registry.MustRegister(collectors.NewGoCollector())
-
-    slotCache := common.NewMemorySlotTimeCache()
-    processor := NewProcessor(publisher, slotCache, registry)
 
 	return &Service{
 		client:        client,
 		processor:     processor,
 		metricsAddr:   metricsAddr,
-		metricsServer: buildMetricsServer(metricsAddr, registry),
-		metricsStopCh: make(chan struct{}),
+		metricsServer: server,
+		metricsStopCh: stopCh,
 	}, nil
 }
 
@@ -131,4 +125,22 @@ func buildMetricsServer(addr string, gatherer prometheus.Gatherer) *http.Server 
 		Handler:           promhttp.HandlerFor(gatherer, promhttp.HandlerOpts{}),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
+}
+
+func setupPipeline(natsCfg natsx.Config, metricsAddr string) (*Processor, prometheus.Registerer, *http.Server, chan struct{}, error) {
+	publisher, err := natsx.NewPublisher(natsCfg)
+	if err != nil {
+		return nil, nil, nil, nil, fmt.Errorf("init nats publisher: %w", err)
+	}
+
+	registry := prometheus.NewRegistry()
+	registry.MustRegister(collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
+	registry.MustRegister(collectors.NewGoCollector())
+
+	slotCache := common.NewMemorySlotTimeCache()
+	processor := NewProcessor(publisher, slotCache, registry)
+
+	server := buildMetricsServer(metricsAddr, registry)
+	stopCh := make(chan struct{})
+	return processor, registry, server, stopCh, nil
 }

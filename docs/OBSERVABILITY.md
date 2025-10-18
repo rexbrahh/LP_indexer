@@ -15,6 +15,14 @@
 - `bridge_source_lag_seconds{subject}` – source stream age observed by the bridge.
 - `ingestor_raydium_swaps_total` – count of Raydium swaps decoded from Geyser.
 - `ingestor_raydium_decode_errors_total` – decoder or publish failures for Raydium flow.
+- `ingestor_orca_swaps_total` – count of Orca swaps decoded from Geyser.
+- `ingestor_orca_decode_errors_total` – decoder/publish failures for Orca flow.
+- `ingestor_meteora_swaps_total` – count of Meteora swaps decoded (stubbed until implementation lands).
+- `ingestor_meteora_decode_errors_total` – decoder/publish failures for Meteora flow.
+- `dex_ingestor_active_source` – gauge (1=Geyser, 2=Helius) indicating active ingest
+  source when failover is enabled.
+- `dex_ingestor_source_failures_total{source}` – count of stream failures per
+  ingest source.
 
 ## Dashboards (planned)
 - Ingestor health (slot lag, error rate, reconnect count).

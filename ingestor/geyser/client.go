@@ -257,3 +257,7 @@ func (c *Client) Close() error {
 	}
 	return nil
 }
+
+func (c *Client) Name() string {
+	return "geyser"
+}

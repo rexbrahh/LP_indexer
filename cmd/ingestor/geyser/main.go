@@ -8,6 +8,7 @@ import (
 	"syscall"
 
 	"github.com/rexbrahh/lp-indexer/ingestor/geyser"
+	"github.com/rexbrahh/lp-indexer/ingestor/helius"
 	natsx "github.com/rexbrahh/lp-indexer/sinks/nats"
 )
 
@@ -27,9 +28,38 @@ func main() {
 
 	metricsAddr := os.Getenv("INGESTOR_METRICS_ADDR")
 
-	service, err := geyser.NewService(geyserCfg, natsCfg, metricsAddr)
-	if err != nil {
-		logger.Fatalf("init service: %v", err)
+	var service interface {
+		Run(ctx context.Context, startSlot uint64) error
+	}
+
+	if os.Getenv("ENABLE_HELIUS_FALLBACK") == "1" {
+		logger.Println("Helius fallback enabled")
+		primaryClient, err := geyser.NewClient(geyserCfg)
+		if err != nil {
+			logger.Fatalf("init geyser client: %v", err)
+		}
+
+		heliusCfg, err := helius.FromEnv()
+		if err != nil {
+			logger.Fatalf("load helius config: %v", err)
+		}
+		heliusCfg.ProgramFilters = geyserCfg.ProgramFilters
+
+		fallbackClient, err := helius.NewStreamClient(heliusCfg)
+		if err != nil {
+			logger.Fatalf("init helius client: %v", err)
+		}
+
+		service, err = geyser.NewFailoverService(primaryClient, fallbackClient, natsCfg, metricsAddr)
+		if err != nil {
+			logger.Fatalf("init failover service: %v", err)
+		}
+	} else {
+		svc, err := geyser.NewService(geyserCfg, natsCfg, metricsAddr)
+		if err != nil {
+			logger.Fatalf("init service: %v", err)
+		}
+		service = svc
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())

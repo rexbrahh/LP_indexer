@@ -56,6 +56,12 @@ flake.nix & default.nix    Nix development shells
    go run ./cmd/ingestor/geyser
    ```
 
+   Emits Raydium and Orca Whirlpool swap events today; Meteora integration is
+   in progress.
+
+   To enable Helius fallback, export `ENABLE_HELIUS_FALLBACK=1` and provide
+   `HELIUS_GRPC`, `HELIUS_WS`, and `HELIUS_API_KEY` before launching the binary.
+
 ## Cutover Phases (Summary)
 1. **Dark launch** – run new ingestors + bridge while legacy Rust stack stays live.
 2. **Shadow compare** – diff swap/candle parity for curated pools; alert on variance.

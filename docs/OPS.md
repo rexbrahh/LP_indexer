@@ -15,6 +15,9 @@
 - Configure program filters via `PROGRAMS_YAML_PATH` (default `ops/programs.yaml`).
 - Set `NATS_URL` / `NATS_STREAM` / `NATS_SUBJECT_ROOT` to control JetStream publishing.
 - Metrics (if enabled) exposed at `INGESTOR_METRICS_ADDR` (default `:9101`).
+- Helios fallback: set `ENABLE_HELIUS_FALLBACK=1` with `HELIUS_GRPC`, `HELIUS_WS`,
+  and `HELIUS_API_KEY` configured; the ingestor will fail over automatically if
+  the primary Geyser stream errors.
 
 ## ClickHouse
 - Apply schema (once DDL is committed): `clickhouse-client --queries-file ops/clickhouse/all.sql`

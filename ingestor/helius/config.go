@@ -30,6 +30,7 @@ type Config struct {
 	RequestTimeout   time.Duration
 	ReconnectBackoff time.Duration
 	ReplaySlots      uint64
+	ProgramFilters   map[string]string
 }
 
 // DefaultConfig returns a Config populated with sensible defaults. Endpoints
@@ -72,7 +73,6 @@ func (c *Config) Validate() error {
 	if c.ReplaySlots == 0 {
 		return errors.New("ReplaySlots must be >= 1")
 	}
-
 	return nil
 }
 
