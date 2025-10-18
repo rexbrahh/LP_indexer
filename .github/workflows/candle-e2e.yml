@@ -103,7 +103,10 @@ jobs:
           PARQUET_ACCESS_KEY: minio
           PARQUET_SECRET_KEY: minio123
         run: |
-          make candle-e2e INPUT=fixtures/swaps_sample.csv
+          make candle-e2e INPUT=fixtures/swaps_parity.csv
+
+      - name: Verify candle parity
+        run: scripts/check_candle_parity.sh
 
       - name: Verify ClickHouse rows
         run: |

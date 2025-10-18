@@ -40,8 +40,12 @@ go run ./cmd/candles
 # 6. Validate persisted candles
 clickhouse-client --query "SELECT count() FROM default.candles WHERE pool_id='RAYDIUM_POOL'"
 
-# Optional: run scripted harness (requires running NATS & ClickHouse)
+# Optional: run scripted harness (requires running NATS, ClickHouse, MinIO)
 scripts/run_candle_e2e.sh
+
+# Parity fixture (assert open/high/low/close values)
+scripts/run_candle_e2e.sh fixtures/swaps_parity.csv
+scripts/check_candle_parity.sh
 ```
 
 ## Expected Result

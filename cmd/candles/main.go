@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"log"
+	"math"
 	"os"
 	"os/signal"
 	"strconv"
@@ -142,75 +143,89 @@ func main() {
 }
 
 type Bridge struct {
-    logger  *log.Logger
-    writer  *clickhouse.Writer
-    parquet *parquetSink.Writer
+	logger  *log.Logger
+	writer  *clickhouse.Writer
+	parquet *parquetSink.Writer
 }
 
 func (b *Bridge) Process(ctx context.Context, msgs []*nats.Msg) error {
-    if len(msgs) == 0 {
-        return nil
-    }
+	if len(msgs) == 0 {
+		return nil
+	}
 
-    clickhouseRows := make([]clickhouse.Candle, 0, len(msgs))
-    parquetRows := make([]*dexv1.Candle, 0, len(msgs))
-    ackMsgs := make([]*nats.Msg, 0, len(msgs))
+	clickhouseRows := make([]clickhouse.Candle, 0, len(msgs))
+	parquetRows := make([]*dexv1.Candle, 0, len(msgs))
+	ackMsgs := make([]*nats.Msg, 0, len(msgs))
 
-    for _, msg := range msgs {
-        var candle dexv1.Candle
-        if err := proto.Unmarshal(msg.Data, &candle); err != nil {
-            b.logger.Printf("decode candle: %v", err)
-            _ = msg.Nak()
-            continue
-        }
+	for _, msg := range msgs {
+		var candle dexv1.Candle
+		if err := proto.Unmarshal(msg.Data, &candle); err != nil {
+			b.logger.Printf("decode candle: %v", err)
+			_ = msg.Nak()
+			continue
+		}
 
-        clickhouseRows = append(clickhouseRows, translateCandle(&candle))
-        parquetRows = append(parquetRows, &candle)
-        ackMsgs = append(ackMsgs, msg)
-    }
+		clickhouseRows = append(clickhouseRows, translateCandle(&candle))
+		parquetRows = append(parquetRows, &candle)
+		ackMsgs = append(ackMsgs, msg)
+	}
 
-    if len(clickhouseRows) == 0 {
-        return nil
-    }
+	if len(clickhouseRows) == 0 {
+		return nil
+	}
 
-    if err := b.writer.WriteCandles(ctx, clickhouseRows); err != nil {
-        b.nakAll(ackMsgs)
-        return err
-    }
+	if err := b.writer.WriteCandles(ctx, clickhouseRows); err != nil {
+		b.nakAll(ackMsgs)
+		return err
+	}
 
-    if b.parquet != nil {
-        for _, c := range parquetRows {
-            if err := b.parquet.AppendCandle(ctx, c); err != nil {
-                b.nakAll(ackMsgs)
-                return err
-            }
-        }
-    }
+	if b.parquet != nil {
+		for _, c := range parquetRows {
+			if err := b.parquet.AppendCandle(ctx, c); err != nil {
+				b.nakAll(ackMsgs)
+				return err
+			}
+		}
+	}
 
-    for _, msg := range ackMsgs {
-        if err := msg.Ack(); err != nil {
-            b.logger.Printf("ack failed: %v", err)
-        }
-    }
-    return nil
+	for _, msg := range ackMsgs {
+		if err := msg.Ack(); err != nil {
+			b.logger.Printf("ack failed: %v", err)
+		}
+	}
+	return nil
 }
 
 func (b *Bridge) nakAll(msgs []*nats.Msg) {
-    for _, msg := range msgs {
-        _ = msg.Nak()
-    }
+	for _, msg := range msgs {
+		_ = msg.Nak()
+	}
 }
+
+const q32Factor = 4294967296.0
 
 func translateCandle(c *dexv1.Candle) clickhouse.Candle {
 	return clickhouse.Candle{
 		Timestamp: time.Unix(int64(c.GetWindowStart()), 0).UTC(),
 		PoolID:    c.GetPoolId(),
-		Open:      float64(c.GetOpenPxQ32()),
-		High:      float64(c.GetHighPxQ32()),
-		Low:       float64(c.GetLowPxQ32()),
-		Close:     float64(c.GetClosePxQ32()),
-		Volume:    float64(c.GetVolQuote().GetLo()),
+		Open:      priceFromQ32(c.GetOpenPxQ32()),
+		High:      priceFromQ32(c.GetHighPxQ32()),
+		Low:       priceFromQ32(c.GetLowPxQ32()),
+		Close:     priceFromQ32(c.GetClosePxQ32()),
+		Volume:    volumeFromU128(c.GetVolQuote()),
 	}
+}
+
+func priceFromQ32(val int64) float64 {
+	return float64(val) / q32Factor
+}
+
+func volumeFromU128(u *dexv1.U128) float64 {
+	if u == nil {
+		return 0
+	}
+	hi := math.Ldexp(float64(u.GetHi()), 64)
+	return hi + float64(u.GetLo())
 }
 
 func envOr(key, fallback string) string {

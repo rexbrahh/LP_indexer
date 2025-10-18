@@ -18,6 +18,7 @@ Steps executed:
    - Replays swaps → candles into JetStream
    - Queries ClickHouse for row count
    - Lists S3 bucket to ensure parquet output exists
+6. **Parity fixture**: `make candle-e2e INPUT=fixtures/swaps_parity.csv` then `scripts/check_candle_parity.sh`
 6. Workflow prints ClickHouse count and S3 listing for auditing.
 
 ## Environment Variables
@@ -35,4 +36,3 @@ Steps executed:
 
 - Harness outputs the failing command/logs.
 - Use `scripts/run_candle_e2e.sh` locally to reproduce.
-
