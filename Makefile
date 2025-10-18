@@ -3,6 +3,14 @@
 PROTO_FILES := $(shell find proto -name '*.proto' 2>/dev/null)
 GOBIN := $(shell go env GOPATH)/bin
 
+ifeq ($(shell command -v docker-compose >/dev/null 2>&1 && echo present),present)
+DOCKER_COMPOSE := docker-compose
+else
+DOCKER_COMPOSE := docker compose
+endif
+
+DOCKER_COMPOSE_FILE ?= docker-compose.yml
+
 # Default target
 help:
 	@echo "Solana Liquidity Indexer - Makefile"
@@ -78,64 +86,81 @@ clean:
 # Start local development infrastructure
 up:
 	@echo "Starting local infrastructure..."
-	docker-compose up -d
+	@if [ ! -f "$(DOCKER_COMPOSE_FILE)" ]; then \
+		echo "ERROR: $(DOCKER_COMPOSE_FILE) not found. Generate or configure your local docker-compose file."; \
+		exit 1; \
+	fi
+	@$(DOCKER_COMPOSE) -f $(DOCKER_COMPOSE_FILE) up -d
 	@echo "Waiting for services to be ready..."
 	sleep 5
+	@if [ "$(BOOTSTRAP_JETSTREAM)" = "1" ]; then \
+		echo "Bootstrapping JetStream stream/consumers..."; \
+		NATS_URL=$${NATS_URL:-nats://127.0.0.1:$${NATS_CLIENT_PORT:-4222}} \
+		$(MAKE) --no-print-directory ops.jetstream.init; \
+	fi
 	@echo "Infrastructure is up"
 
 # Stop local infrastructure
 down:
 	@echo "Stopping local infrastructure..."
-	docker-compose down
+	@if [ ! -f "$(DOCKER_COMPOSE_FILE)" ]; then \
+		echo "WARN: $(DOCKER_COMPOSE_FILE) not found, skipping docker compose teardown."; \
+		exit 0; \
+	fi
+	@$(DOCKER_COMPOSE) -f $(DOCKER_COMPOSE_FILE) down
 	@echo "Infrastructure is down"
 
 # Initialize JetStream streams and consumers
 ops.jetstream.init:
 	@echo "Initializing JetStream streams and consumers..."
 	@command -v nats >/dev/null 2>&1 || { echo "ERROR: nats CLI not found. Install with: brew install nats-io/nats-tools/nats"; exit 1; }
-	@nats stream add --config ops/jetstream/streams.dex.json || echo "Stream DEX may already exist"
-	@nats consumer add DEX --config ops/jetstream/consumer.swaps.json || echo "Consumer SWAP_FIREHOSE may already exist"
+	@NATS_SERVER=$${NATS_URL:-nats://127.0.0.1:$${NATS_CLIENT_PORT:-4222}}; \
+	nats --server $$NATS_SERVER stream add --config ops/jetstream/streams.dex.json || echo "Stream DEX may already exist"; \
+	nats --server $$NATS_SERVER consumer add DEX --config ops/jetstream/consumer.swaps.json || echo "Consumer SWAP_FIREHOSE may already exist"
 	@echo "✓ JetStream initialization complete!"
 
 # Verify JetStream streams and consumers
 ops.jetstream.verify:
 	@echo "Verifying JetStream streams and consumers..."
 	@command -v nats >/dev/null 2>&1 || { echo "ERROR: nats CLI not found. Install with: brew install nats-io/nats-tools/nats"; exit 1; }
-	@nats stream info DEX >/dev/null 2>&1 || { echo "ERROR: Stream DEX does not exist"; exit 1; }
-	@nats consumer info DEX SWAP_FIREHOSE >/dev/null 2>&1 || { echo "ERROR: Consumer SWAP_FIREHOSE does not exist"; exit 1; }
+	@NATS_SERVER=$${NATS_URL:-nats://127.0.0.1:$${NATS_CLIENT_PORT:-4222}}; \
+	nats --server $$NATS_SERVER stream info DEX >/dev/null 2>&1 || { echo "ERROR: Stream DEX does not exist"; exit 1; }; \
+	nats --server $$NATS_SERVER consumer info DEX SWAP_FIREHOSE >/dev/null 2>&1 || { echo "ERROR: Consumer SWAP_FIREHOSE does not exist"; exit 1; }
 	@echo "✓ JetStream verification complete!"
 
 run.bridge:
-    @echo "Starting legacy bridge..."
-    BRIDGE_SOURCE_NATS_URL?=nats://127.0.0.1:4222
-    BRIDGE_TARGET_NATS_URL?=$${BRIDGE_SOURCE_NATS_URL}
-    BRIDGE_SOURCE_STREAM?=DEX
-    BRIDGE_TARGET_STREAM?=legacy
-    BRIDGE_SUBJECT_MAP_PATH?=ops/bridge/subject_map.yaml
-    BRIDGE_METRICS_ADDR?=:9090
-    @if [ ! -f "$$BRIDGE_SUBJECT_MAP_PATH" ]; then echo "ERROR: subject map $$BRIDGE_SUBJECT_MAP_PATH not found"; exit 1; fi
-    BRIDGE_SOURCE_NATS_URL=$${BRIDGE_SOURCE_NATS_URL} \
-    BRIDGE_TARGET_NATS_URL=$${BRIDGE_TARGET_NATS_URL} \
-    BRIDGE_SOURCE_STREAM=$${BRIDGE_SOURCE_STREAM} \
-    BRIDGE_TARGET_STREAM=$${BRIDGE_TARGET_STREAM} \
-    BRIDGE_SUBJECT_MAP_PATH=$${BRIDGE_SUBJECT_MAP_PATH} \
-	BRIDGE_METRICS_ADDR=$${BRIDGE_METRICS_ADDR} \
-	go run ./cmd/bridge
+	@echo "Starting legacy bridge..."
+	@BRIDGE_SOURCE_NATS_URL=$${BRIDGE_SOURCE_NATS_URL:-nats://127.0.0.1:4222}; \
+	BRIDGE_TARGET_NATS_URL=$${BRIDGE_TARGET_NATS_URL:-$$BRIDGE_SOURCE_NATS_URL}; \
+	BRIDGE_SOURCE_STREAM=$${BRIDGE_SOURCE_STREAM:-DEX}; \
+	BRIDGE_TARGET_STREAM=$${BRIDGE_TARGET_STREAM:-legacy}; \
+	BRIDGE_SUBJECT_MAP_PATH=$${BRIDGE_SUBJECT_MAP_PATH:-ops/bridge/subject_map.yaml}; \
+	BRIDGE_METRICS_ADDR=$${BRIDGE_METRICS_ADDR:-:9090}; \
+	if [ ! -f "$$BRIDGE_SUBJECT_MAP_PATH" ]; then echo "ERROR: subject map $$BRIDGE_SUBJECT_MAP_PATH not found"; exit 1; fi; \
+	env \
+		BRIDGE_SOURCE_NATS_URL="$$BRIDGE_SOURCE_NATS_URL" \
+		BRIDGE_TARGET_NATS_URL="$$BRIDGE_TARGET_NATS_URL" \
+		BRIDGE_SOURCE_STREAM="$$BRIDGE_SOURCE_STREAM" \
+		BRIDGE_TARGET_STREAM="$$BRIDGE_TARGET_STREAM" \
+		BRIDGE_SUBJECT_MAP_PATH="$$BRIDGE_SUBJECT_MAP_PATH" \
+		BRIDGE_METRICS_ADDR="$$BRIDGE_METRICS_ADDR" \
+		go run ./cmd/bridge
 
 run.ingestor.geyser:
 	@echo "Starting geyser ingestor..."
-	PROGRAMS_YAML_PATH?=ops/programs.yaml
-	NATS_URL?=nats://127.0.0.1:4222
-	NATS_STREAM?=DEX
-	NATS_SUBJECT_ROOT?=dex.sol
-	INGESTOR_METRICS_ADDR?=:9101
-	@if [ ! -f "$$PROGRAMS_YAML_PATH" ]; then echo "ERROR: programs file $$PROGRAMS_YAML_PATH not found"; exit 1; fi
-	PROGRAMS_YAML_PATH=$${PROGRAMS_YAML_PATH} \
-	NATS_URL=$${NATS_URL} \
-	NATS_STREAM=$${NATS_STREAM} \
-	NATS_SUBJECT_ROOT=$${NATS_SUBJECT_ROOT} \
-	INGESTOR_METRICS_ADDR=$${INGESTOR_METRICS_ADDR} \
-	go run ./cmd/ingestor/geyser
+	@PROGRAMS_YAML_PATH=$${PROGRAMS_YAML_PATH:-ops/programs.yaml}; \
+	NATS_URL=$${NATS_URL:-nats://127.0.0.1:4222}; \
+	NATS_STREAM=$${NATS_STREAM:-DEX}; \
+	NATS_SUBJECT_ROOT=$${NATS_SUBJECT_ROOT:-dex.sol}; \
+	INGESTOR_METRICS_ADDR=$${INGESTOR_METRICS_ADDR:-:9101}; \
+	if [ ! -f "$$PROGRAMS_YAML_PATH" ]; then echo "ERROR: programs file $$PROGRAMS_YAML_PATH not found"; exit 1; fi; \
+	env \
+		PROGRAMS_YAML_PATH="$$PROGRAMS_YAML_PATH" \
+		NATS_URL="$$NATS_URL" \
+		NATS_STREAM="$$NATS_STREAM" \
+		NATS_SUBJECT_ROOT="$$NATS_SUBJECT_ROOT" \
+		INGESTOR_METRICS_ADDR="$$INGESTOR_METRICS_ADDR" \
+		go run ./cmd/ingestor/geyser
 
 check.bridge.metrics:
 	@echo "Checking bridge metrics endpoint..."

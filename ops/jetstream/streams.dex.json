@@ -7,12 +7,20 @@
     "dex.sol.*.swap",
     "dex.sol.pool.snapshot",
     "dex.sol.candle.pool.*",
-    "dex.sol.candle.pair.*"
+    "dex.sol.candle.pair.*",
+    "dex.sol.candle.1s.*",
+    "dex.sol.candle.1m.*",
+    "dex.sol.candle.5m.*",
+    "dex.sol.candle.15m.*",
+    "dex.sol.candle.1h.*",
+    "dex.sol.candle.4h.*",
+    "dex.sol.candle.1d.*",
+    "dex.sol.candle.custom.*"
   ],
   "retention": "limits",
   "storage": "file",
   "discard": "old",
-  "replicas": 3,
+  "num_replicas": 1,
   "max_age": 0,
-  "duplicate_window": "2m"
+  "duplicate_window": 120000000000
 }

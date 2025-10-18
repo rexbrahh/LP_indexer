@@ -7,10 +7,12 @@
 ## JetStream
 - Stream config: `ops/jetstream/streams.dex.json`
 - Consumer config: `ops/jetstream/consumer.swaps.json`
-- Use `make ops.jetstream.init` to create resources, `make ops.jetstream.verify` to assert existence.
+- Requires the `nats` CLI (`brew install nats-io/nats-tools/nats` or `CGO_ENABLED=0 go install github.com/nats-io/natscli/nats@latest`).
+- Use `make ops.jetstream.init` to create resources, `make ops.jetstream.verify` to assert existence. Override the target server via `NATS_URL` (defaults to `nats://127.0.0.1:${NATS_CLIENT_PORT:-4222}`).
+- Set `BOOTSTRAP_JETSTREAM=1 make up` to automatically seed the stream/consumer after Docker services start.
 
 ## ClickHouse
-- Writer configured via `CLICKHOUSE_DSN`; use TLS if required by infrastructure.
+- Writer configured via `CLICKHOUSE_DSN`; both `tcp://host:port` and `clickhouse://host:port` DSNs are accepted. Use TLS parameters if required by infrastructure.
 - Batch size / retry settings defined in `sinks/clickhouse/writer.go`; adjust per environment.
 
 ## Redis (API cache)

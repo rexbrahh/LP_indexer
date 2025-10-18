@@ -44,10 +44,11 @@ flake.nix & default.nix    Nix development shells
 
 ## Getting Started
 1. Install Nix or ensure Go (1.22+), Clang 17, and protoc are available.
-2. Run `make bootstrap` to pull toolchains, install git hooks, and fetch proto deps.
-3. Use `make proto-gen` whenever protobuf contracts change.
-4. Start dependencies locally with `make up` (NATS, ClickHouse, MinIO, Postgres).
-5. Run the geyser ingestor once credentials are set:
+2. Install the NATS CLI (`brew install nats-io/nats-tools/nats` or `CGO_ENABLED=0 go install github.com/nats-io/natscli/nats@latest`).
+3. Run `make bootstrap` to pull toolchains, install git hooks, and fetch proto deps.
+4. Use `make proto-gen` whenever protobuf contracts change.
+5. Start dependencies locally with `make up` (NATS, ClickHouse, MinIO, Postgres). Set `BOOTSTRAP_JETSTREAM=1 make up` to auto-seed the JetStream stream and consumer after the containers start.
+6. Run the geyser ingestor once credentials are set:
 
    ```bash
    PROGRAMS_YAML_PATH=ops/programs.yaml \
