@@ -1,7 +1,10 @@
 #pragma once
 
 #include "candle_types.hpp"
+#include "publisher.hpp"
 #include <atomic>
+#include <condition_variable>
+#include <deque>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -17,6 +20,14 @@ struct CandleWindow;
 class CandleWorker;
 class CandlePublisher;
 class InMemoryPublisher;
+
+struct TradeEvent {
+  std::string pair_id;
+  uint64_t timestamp;
+  FixedPrice price;
+  FixedPrice base_amount;
+  FixedPrice quote_amount;
+};
 
 /// Time-windowed candle aggregator for a specific pair/window combination
 struct CandleWindow {
@@ -46,6 +57,9 @@ struct Shard {
   // Map: pair_id -> vector of CandleWindow (one per WindowSize)
   std::map<std::string, std::vector<std::shared_ptr<CandleWindow>>> windows;
   std::mutex mutex;
+  std::mutex queue_mutex;
+  std::condition_variable queue_cv;
+  std::deque<TradeEvent> queue;
 
   explicit Shard(uint32_t id) : shard_id(id) {}
 
@@ -125,7 +139,8 @@ private:
 
   /// Background finalization loop (timing wheel)
   void finalize_loop();
+
+  void shard_loop(Shard *shard);
 };
 
 } // namespace candle
-#include "publisher.hpp"

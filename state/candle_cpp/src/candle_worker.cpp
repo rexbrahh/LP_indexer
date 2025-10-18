@@ -1,5 +1,6 @@
 #include "candle_worker.hpp"
 #include "publisher.hpp"
+#include <condition_variable>
 #include <algorithm>
 #include <functional>
 #include <iostream>
@@ -166,6 +167,13 @@ void CandleWorker::start() {
     return; // Already running
   }
 
+  // Start worker threads per shard
+  for (auto &shard : shards_) {
+    worker_threads_.emplace_back([this, shard_ptr = shard.get()]() {
+      shard_loop(shard_ptr);
+    });
+  }
+
   // Start timing wheel for finalization
   finalize_thread_ = std::thread([this]() { finalize_loop(); });
 
@@ -184,6 +192,13 @@ void CandleWorker::stop() {
   }
 
   // Shutdown worker threads gracefully
+  for (auto &shard : shards_) {
+    {
+      std::lock_guard<std::mutex> lock(shard->queue_mutex);
+    }
+    shard->queue_cv.notify_all();
+  }
+
   for (auto &thread : worker_threads_) {
     if (thread.joinable()) {
       thread.join();
@@ -204,9 +219,12 @@ void CandleWorker::on_trade(const std::string &pair_id, uint64_t timestamp,
   uint32_t shard_idx = get_shard_for_pair(pair_id);
   auto &shard = shards_[shard_idx];
 
-  // Process trade synchronously for now
-  // TODO: Queue to worker thread pool for async processing
-  shard->process_trade(pair_id, timestamp, price, base_amount, quote_amount);
+  {
+    std::lock_guard<std::mutex> lock(shard->queue_mutex);
+    shard->queue.push_back(TradeEvent{pair_id, timestamp, price, base_amount,
+                                      quote_amount});
+  }
+  shard->queue_cv.notify_one();
 }
 
 void CandleWorker::emit_candle(const std::string &pair_id,
@@ -305,6 +323,28 @@ void CandleWorker::finalize_loop() {
         }
       }
     }
+  }
+}
+
+void CandleWorker::shard_loop(Shard *shard) {
+  while (true) {
+    TradeEvent event;
+    {
+      std::unique_lock<std::mutex> lock(shard->queue_mutex);
+      shard->queue_cv.wait(lock, [this, shard]() {
+        return !running_ || !shard->queue.empty();
+      });
+
+      if (!running_ && shard->queue.empty()) {
+        break;
+      }
+
+      event = std::move(shard->queue.front());
+      shard->queue.pop_front();
+    }
+
+    shard->process_trade(event.pair_id, event.timestamp, event.price,
+                         event.base_amount, event.quote_amount);
   }
 }
 
