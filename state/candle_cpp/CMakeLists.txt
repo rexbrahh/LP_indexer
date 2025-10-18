@@ -1,6 +1,22 @@
 cmake_minimum_required(VERSION 3.20)
 project(candle_cpp CXX)
 
+include(FetchContent)
+
+find_package(Protobuf REQUIRED)
+
+set(NATS_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(NATS_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(NATS_BUILD_CLIENT_UTILS OFF CACHE BOOL "" FORCE)
+set(NATS_BUILD_TLS ON CACHE BOOL "" FORCE)
+
+FetchContent_Declare(
+  natsc
+  GIT_REPOSITORY https://github.com/nats-io/nats.c.git
+  GIT_TAG v3.6.1
+)
+FetchContent_MakeAvailable(natsc)
+
 # C++20 standard
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -12,20 +28,21 @@ set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -g -O0")
 set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3")
 
 # Include directories
-include_directories(include)
+include_directories(include gen ${Protobuf_INCLUDE_DIRS})
 
 # Source files
 set(CANDLE_SOURCES
     src/fixed_point.cpp
     src/candle_worker.cpp
     src/publisher.cpp
+    gen/dex/sol/v1/core.pb.cc
 )
 
 # Create library
 add_library(candle_cpp STATIC ${CANDLE_SOURCES})
+target_link_libraries(candle_cpp PUBLIC protobuf::libprotobuf nats_static)
 
 # Fetch GoogleTest
-include(FetchContent)
 FetchContent_Declare(
   googletest
   GIT_REPOSITORY https://github.com/google/googletest.git
