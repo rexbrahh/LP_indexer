@@ -96,6 +96,10 @@ public:
   /// Override the publisher used to emit candles (thread-safe).
   void set_publisher(std::shared_ptr<CandlePublisher> publisher);
 
+  /// Configure JetStream publishing with the provided configuration. Throws on
+  /// failure to connect.
+  void set_jetstream_publisher(const JetStreamConfig &config);
+
   /// Get emitted candles (for testing)
   std::vector<Candle> get_emitted_candles() const;
 

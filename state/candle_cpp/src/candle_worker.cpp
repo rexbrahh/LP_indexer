@@ -260,6 +260,10 @@ void CandleWorker::set_publisher(std::shared_ptr<CandlePublisher> publisher) {
   }
 }
 
+void CandleWorker::set_jetstream_publisher(const JetStreamConfig &config) {
+  set_publisher(std::make_shared<JetStreamPublisher>(config));
+}
+
 void CandleWorker::finalize_loop() {
   // Timing wheel: periodically check for candles to finalize
   // For 1m windows, check every 1 second
