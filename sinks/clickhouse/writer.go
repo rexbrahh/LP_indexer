@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/ClickHouse/ch-go"
@@ -166,8 +167,14 @@ func parseDSN(dsn string) (ch.Options, error) {
 		return ch.Options{}, fmt.Errorf("invalid DSN format: %w", err)
 	}
 
-	if u.Scheme != "clickhouse" {
-		return ch.Options{}, fmt.Errorf("invalid scheme: expected 'clickhouse', got '%s'", u.Scheme)
+	scheme := strings.ToLower(u.Scheme)
+	switch scheme {
+	case "clickhouse", "tcp":
+		// Accept both modern clickhouse:// and historical tcp:// prefixes.
+	case "":
+		return ch.Options{}, fmt.Errorf("invalid scheme: expected 'clickhouse' or 'tcp'")
+	default:
+		return ch.Options{}, fmt.Errorf("invalid scheme: expected 'clickhouse' or 'tcp', got '%s'", u.Scheme)
 	}
 
 	opts := ch.Options{
