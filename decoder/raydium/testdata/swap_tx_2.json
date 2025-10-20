@@ -20,5 +20,6 @@
   "expected_amount_out": 2000000000,
   "expected_price": 60.0,
   "expected_volume": 120000000,
-  "notes": "Reverse swap USDC->SOL. Amount in: 120 USDC (120e6), Amount out: 2 SOL (2e9 lamports). Price still 60 USDC per SOL. IsBaseInput=false indicates B->A direction."
+  "notes": "Reverse swap USDC->SOL. Amount in: 120 USDC (120e6), Amount out: 2 SOL (2e9 lamports). Price still 60 USDC per SOL. IsBaseInput=false indicates B->A direction.",
+  "expected_is_base_input": false
 }

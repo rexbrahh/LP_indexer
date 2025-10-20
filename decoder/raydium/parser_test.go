@@ -11,28 +11,29 @@ import (
 
 // TestFixture represents the structure of our test fixture JSON files
 type TestFixture struct {
-	Description       string  `json:"description"`
-	Signature         string  `json:"signature"`
-	Slot              uint64  `json:"slot"`
-	Timestamp         int64   `json:"timestamp"`
-	PoolAddress       string  `json:"pool_address"`
-	MintA             string  `json:"mint_a"`
-	MintB             string  `json:"mint_b"`
-	DecimalsA         uint8   `json:"decimals_a"`
-	DecimalsB         uint8   `json:"decimals_b"`
-	FeeBps            uint16  `json:"fee_bps"`
-	InstructionData   string  `json:"instruction_data"`
-	PreVaultA         uint64  `json:"pre_vault_a"`
-	PostVaultA        uint64  `json:"post_vault_a"`
-	PreVaultB         uint64  `json:"pre_vault_b"`
-	PostVaultB        uint64  `json:"post_vault_b"`
-	SqrtPriceX64Low   uint64  `json:"sqrt_price_x64_low"`
-	SqrtPriceX64High  uint64  `json:"sqrt_price_x64_high"`
-	ExpectedAmountIn  uint64  `json:"expected_amount_in"`
-	ExpectedAmountOut uint64  `json:"expected_amount_out"`
-	ExpectedPrice     float64 `json:"expected_price"`
-	ExpectedVolume    uint64  `json:"expected_volume"`
-	Notes             string  `json:"notes"`
+	Description         string  `json:"description"`
+	Signature           string  `json:"signature"`
+	Slot                uint64  `json:"slot"`
+	Timestamp           int64   `json:"timestamp"`
+	PoolAddress         string  `json:"pool_address"`
+	MintA               string  `json:"mint_a"`
+	MintB               string  `json:"mint_b"`
+	DecimalsA           uint8   `json:"decimals_a"`
+	DecimalsB           uint8   `json:"decimals_b"`
+	FeeBps              uint16  `json:"fee_bps"`
+	InstructionData     string  `json:"instruction_data"`
+	PreVaultA           uint64  `json:"pre_vault_a"`
+	PostVaultA          uint64  `json:"post_vault_a"`
+	PreVaultB           uint64  `json:"pre_vault_b"`
+	PostVaultB          uint64  `json:"post_vault_b"`
+	SqrtPriceX64Low     uint64  `json:"sqrt_price_x64_low"`
+	SqrtPriceX64High    uint64  `json:"sqrt_price_x64_high"`
+	ExpectedAmountIn    uint64  `json:"expected_amount_in"`
+	ExpectedAmountOut   uint64  `json:"expected_amount_out"`
+	ExpectedPrice       float64 `json:"expected_price"`
+	ExpectedVolume      uint64  `json:"expected_volume"`
+	ExpectedIsBaseInput bool    `json:"expected_is_base_input"`
+	Notes               string  `json:"notes"`
 }
 
 func loadTestFixture(t *testing.T, filename string) *TestFixture {
@@ -198,6 +199,9 @@ func TestParseSwapEvent(t *testing.T) {
 			if event.Timestamp != fixture.Timestamp {
 				t.Errorf("Timestamp = %v, want %v", event.Timestamp, fixture.Timestamp)
 			}
+			if event.IsBaseInput != fixture.ExpectedIsBaseInput {
+				t.Errorf("IsBaseInput = %v, want %v", event.IsBaseInput, fixture.ExpectedIsBaseInput)
+			}
 		})
 	}
 }
@@ -334,6 +338,50 @@ func TestCalculatePrice(t *testing.T) {
 				t.Errorf("CalculatePrice() = %v, want %v (±%v)", price, fixture.ExpectedPrice, tolerance)
 			}
 		})
+	}
+}
+
+func TestNormalizeToCanonicalPairInverts(t *testing.T) {
+	event := &SwapEvent{
+		PoolAddress:      "pool",
+		MintA:            "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", // USDC
+		MintB:            "So11111111111111111111111111111111111111112",  // SOL
+		DecimalsA:        6,
+		DecimalsB:        9,
+		AmountIn:         60000000,
+		AmountOut:        1000000000,
+		FeeBps:           25,
+		SqrtPriceX64Low:  0,
+		SqrtPriceX64High: 1,
+		IsBaseInput:      true,
+		Slot:             1,
+		Signature:        "sig",
+		Timestamp:        1700000000,
+	}
+
+	pair, err := event.NormalizeToCanonicalPair()
+	if err != nil {
+		t.Fatalf("NormalizeToCanonicalPair returned error: %v", err)
+	}
+
+	if !pair.Inverted {
+		t.Fatalf("expected pair inversion when canonical ordering applied")
+	}
+
+	if event.MintA != pair.BaseMint {
+		t.Fatalf("MintA not updated to canonical base: got %s, want %s", event.MintA, pair.BaseMint)
+	}
+
+	if event.MintB != pair.QuoteMint {
+		t.Fatalf("MintB not updated to canonical quote: got %s, want %s", event.MintB, pair.QuoteMint)
+	}
+
+	if event.IsBaseInput {
+		t.Fatalf("expected IsBaseInput to invert after canonical normalization")
+	}
+
+	if event.DecimalsA != 9 || event.DecimalsB != 6 {
+		t.Fatalf("expected decimals to swap after normalization, got %d/%d", event.DecimalsA, event.DecimalsB)
 	}
 }
 

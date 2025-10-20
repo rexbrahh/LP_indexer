@@ -20,5 +20,6 @@
   "expected_amount_out": 60000000,
   "expected_price": 60.0,
   "expected_volume": 60000000,
-  "notes": "Simple SOL->USDC swap. Amount in: 1 SOL (1e9 lamports), Amount out: 60 USDC (60e6). Price: 60 USDC per SOL. Q64.64 sqrt price represents sqrt(60) with decimal adjustment."
+  "notes": "Simple SOL->USDC swap. Amount in: 1 SOL (1e9 lamports), Amount out: 60 USDC (60e6). Price: 60 USDC per SOL. Q64.64 sqrt price represents sqrt(60) with decimal adjustment.",
+  "expected_is_base_input": true
 }

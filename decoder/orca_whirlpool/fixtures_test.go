@@ -166,7 +166,7 @@ func GetTestFixtures() []TestFixture {
 				TokenMintB:       "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",
 				TokenVaultA:      "vault_usdc",
 				TokenVaultB:      "vault_usdt",
-                SqrtPrice:        common.FloatToSqrtPriceQ64(0.9985),
+				SqrtPrice:        common.FloatToSqrtPriceQ64(0.9985),
 				TickCurrentIndex: 9,
 				Liquidity:        "10000000000000",
 				FeeRate:          10,
@@ -194,6 +194,91 @@ func GetTestFixtures() []TestFixture {
 				VolumeBase:       999.0,
 				VolumeQuote:      1000.0,
 				BaseAsset:        "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",
+				QuoteAsset:       "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+			},
+		},
+		// Fixture 3: explicit B->A direction (USDC -> SOL)
+		{
+			Name:      "USDC_to_SOL_reverse_direction",
+			Signature: "7aHkLmN...",
+			Slot:      250000200,
+			Timestamp: baseTimestamp.Add(2 * time.Minute),
+			InstructionData: buildSwapInstructionData(
+				500000000, // 500 USDC
+				0,
+				"0",
+				true,
+				false, // B -> A direction
+			),
+			Accounts: []string{
+				"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+				"9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM",
+				"HJPjoWUrhoZzkNfRpHuieeFk9WcZWjwy6PBjZ81ngndJ",
+				"user_sol_account",
+				"vault_sol",
+				"user_usdc_account",
+				"vault_usdc",
+			},
+			PreBalances: []uint64{
+				0, 0, 0,
+				100000000,    // user SOL: 0.1
+				101000000000, // vault SOL
+				2000000000,   // user USDC: 2000
+				50000000000,  // vault USDC
+			},
+			PostBalances: []uint64{
+				0, 0, 0,
+				600000000,    // user SOL: +0.5
+				100500000000, // vault SOL: -0.5
+				1500000000,   // user USDC: -500
+				50500000000,  // vault USDC: +500
+			},
+			PoolStatePre: &WhirlpoolState{
+				WhirlpoolAddress: "HJPjoWUrhoZzkNfRpHuieeFk9WcZWjwy6PBjZ81ngndJ",
+				TokenMintA:       "So11111111111111111111111111111111111111112",
+				TokenMintB:       "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+				TokenVaultA:      "vault_sol",
+				TokenVaultB:      "vault_usdc",
+				SqrtPrice:        common.FloatToSqrtPriceQ64(1000.0),
+				TickCurrentIndex: 60000,
+				Liquidity:        "7500000000000",
+				FeeRate:          30,
+				ProtocolFeeRate:  200,
+			},
+			PoolStatePost: &WhirlpoolState{
+				WhirlpoolAddress: "HJPjoWUrhoZzkNfRpHuieeFk9WcZWjwy6PBjZ81ngndJ",
+				TokenMintA:       "So11111111111111111111111111111111111111112",
+				TokenMintB:       "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+				TokenVaultA:      "vault_sol",
+				TokenVaultB:      "vault_usdc",
+				SqrtPrice:        common.FloatToSqrtPriceQ64(1001.0),
+				TickCurrentIndex: 60005,
+				Liquidity:        "7500000000000",
+				FeeRate:          30,
+				ProtocolFeeRate:  200,
+			},
+			ExpectedEvent: &SwapEvent{
+				Signature:        "7aHkLmN...",
+				Slot:             250000200,
+				Timestamp:        baseTimestamp.Add(2 * time.Minute),
+				PoolAddress:      "HJPjoWUrhoZzkNfRpHuieeFk9WcZWjwy6PBjZ81ngndJ",
+				MintA:            "So11111111111111111111111111111111111111112",
+				MintB:            "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+				AToB:             false,
+				AmountIn:         500000000,
+				AmountOut:        500000000,
+				SqrtPriceQ64Pre:  common.FloatToSqrtPriceQ64(1000.0),
+				SqrtPriceQ64Post: common.FloatToSqrtPriceQ64(1001.0),
+				TickIndexPre:     60000,
+				TickIndexPost:    60005,
+				LiquidityPre:     "7500000000000",
+				LiquidityPost:    "7500000000000",
+				FeeAmount:        1500000,
+				ProtocolFee:      30000,
+				Price:            1001.0,
+				VolumeBase:       0.5,
+				VolumeQuote:      500.0,
+				BaseAsset:        "So11111111111111111111111111111111111111112",
 				QuoteAsset:       "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
 			},
 		},
