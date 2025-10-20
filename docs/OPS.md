@@ -12,6 +12,7 @@
 
 ## Geyser Ingestor
 - Run locally: `make run.ingestor.geyser`
+- Demo streaming harness: `GEYSER_ENDPOINT=... GEYSER_API_KEY=... make demo.geyser`
 - Configure program filters via `PROGRAMS_YAML_PATH` (default `ops/programs.yaml`).
 - Set `NATS_URL` / `NATS_STREAM` / `NATS_SUBJECT_ROOT` to control JetStream publishing.
 - Metrics (if enabled) exposed at `INGESTOR_METRICS_ADDR` (default `:9101`).

@@ -69,6 +69,10 @@ flake.nix & default.nix    Nix development shells
    Emits Raydium and Orca Whirlpool swap events today; Meteora integration is
    in progress.
 
+   For a quick streaming demo without full decoder wiring, see
+   [`docs/INGESTOR_GEYSER_DEMO.md`](docs/INGESTOR_GEYSER_DEMO.md) or run
+   `make demo.geyser` with `GEYSER_ENDPOINT`/`GEYSER_API_KEY` set.
+
    To enable Helius fallback, export `ENABLE_HELIUS_FALLBACK=1` and provide
    `HELIUS_GRPC`, `HELIUS_WS`, and `HELIUS_API_KEY` before launching the binary.
 

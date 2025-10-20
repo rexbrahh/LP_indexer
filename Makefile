@@ -1,4 +1,4 @@
-.PHONY: help bootstrap proto-gen test lint build clean ops.clickhouse.apply up down ops.jetstream.init ops.jetstream.verify run.bridge check.bridge.metrics run.ingestor.geyser candle-e2e
+.PHONY: help bootstrap proto-gen test lint build clean ops.clickhouse.apply up down ops.jetstream.init ops.jetstream.verify run.bridge check.bridge.metrics run.ingestor.geyser candle-e2e demo.geyser
 
 PROTO_FILES := $(shell find proto -name '*.proto' 2>/dev/null)
 GOBIN := $(shell go env GOPATH)/bin
@@ -31,6 +31,7 @@ help:
 	@echo "  run.ingestor.geyser - Run the geyser ingestor (Raydium swaps -> JetStream)"
 	@echo "  candle-e2e         - Run candle replay + ClickHouse validation harness"
 	@echo "  check.bridge.metrics - Assert bridge Prometheus metrics respond"
+	@echo "  demo.geyser        - Run Geyser streaming demo against a configured endpoint"
 
 # Bootstrap development environment
 bootstrap:
@@ -199,3 +200,9 @@ check.bridge.metrics:
 
 candle-e2e:
 	@scripts/run_candle_e2e.sh $(INPUT)
+
+demo.geyser:
+	@GEYSER_ENDPOINT=$${GEYSER_ENDPOINT} \
+	GEYSER_API_KEY=$${GEYSER_API_KEY} \
+	GEYSER_PROGRAMS_JSON=$${GEYSER_PROGRAMS_JSON:-ops/geyser_programs_demo.json} \
+	go run ./cmd/ingestor/geyser-demo
