@@ -20,7 +20,7 @@
   the primary Geyser stream errors.
 
 ## ClickHouse
-- Apply schema (once DDL is committed): `clickhouse-client --queries-file ops/clickhouse/all.sql`
+- Apply schema: `make ops.clickhouse.apply` (respects `CLICKHOUSE_DSN`, falls back to docker exec when local client is missing).
 - Monitor write latency via exported Prometheus metrics (`clickhouse_write_latency_ms_bucket`).
 
 ## Backfill

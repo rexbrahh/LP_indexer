@@ -48,7 +48,14 @@ flake.nix & default.nix    Nix development shells
 3. Run `make bootstrap` to pull toolchains, install git hooks, and fetch proto deps.
 4. Use `make proto-gen` whenever protobuf contracts change.
 5. Start dependencies locally with `make up` (NATS, ClickHouse, MinIO, Postgres). Set `BOOTSTRAP_JETSTREAM=1 make up` to auto-seed the JetStream stream and consumer after the containers start.
-6. Run the geyser ingestor once credentials are set:
+6. Apply ClickHouse schemas (optional for local testing):
+
+   ```bash
+   CLICKHOUSE_DSN=clickhouse://127.0.0.1:9000/default \
+   make ops.clickhouse.apply
+   ```
+
+7. Run the geyser ingestor once credentials are set:
 
    ```bash
    PROGRAMS_YAML_PATH=ops/programs.yaml \

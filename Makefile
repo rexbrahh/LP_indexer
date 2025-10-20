@@ -1,4 +1,4 @@
-.PHONY: help bootstrap proto-gen test lint build clean up down ops.jetstream.init ops.jetstream.verify run.bridge check.bridge.metrics run.ingestor.geyser candle-e2e
+.PHONY: help bootstrap proto-gen test lint build clean ops.clickhouse.apply up down ops.jetstream.init ops.jetstream.verify run.bridge check.bridge.metrics run.ingestor.geyser candle-e2e
 
 PROTO_FILES := $(shell find proto -name '*.proto' 2>/dev/null)
 GOBIN := $(shell go env GOPATH)/bin
@@ -22,6 +22,7 @@ help:
 	@echo "  lint               - Run linters"
 	@echo "  build              - Build all binaries"
 	@echo "  clean              - Clean build artifacts"
+	@echo "  ops.clickhouse.apply - Apply ClickHouse schemas in ops/clickhouse"
 	@echo "  up                 - Start local dependencies (NATS, ClickHouse, etc.)"
 	@echo "  down               - Stop local dependencies"
 	@echo "  ops.jetstream.init - Initialize JetStream streams and consumers"
@@ -82,6 +83,9 @@ clean:
 	@echo "Cleaning build artifacts..."
 	rm -rf bin/
 	go clean
+
+ops.clickhouse.apply:
+	@./scripts/apply_clickhouse_schema.sh
 
 # Start local development infrastructure
 up:

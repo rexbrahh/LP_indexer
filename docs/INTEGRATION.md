@@ -13,6 +13,7 @@
 
 ## ClickHouse
 - Writer configured via `CLICKHOUSE_DSN`; both `tcp://host:port` and `clickhouse://host:port` DSNs are accepted. Use TLS parameters if required by infrastructure.
+- Apply schemas via `make ops.clickhouse.apply` (respects `CLICKHOUSE_DSN`, falls back to docker exec when needed).
 - Batch size / retry settings defined in `sinks/clickhouse/writer.go`; adjust per environment.
 
 ## Redis (API cache)
