@@ -70,7 +70,8 @@ test:
 lint:
 	@echo "Running linters..."
 	go vet ./...
-	@command -v golangci-lint >/dev/null 2>&1 && golangci-lint run || echo "golangci-lint not installed, skipping"
+	@command -v golangci-lint >/dev/null 2>&1 || { echo "ERROR: golangci-lint not found. Install via 'go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest' or use nix develop."; exit 1; }
+	golangci-lint run ./...
 
 # Build all binaries
 build:
