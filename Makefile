@@ -38,6 +38,7 @@ bootstrap:
 	go mod download
 	go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
 	go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
+	go install github.com/bufbuild/buf/cmd/buf@latest
 	@command -v protoc >/dev/null 2>&1 || { echo "WARNING: protoc not found on PATH. Install from https://github.com/protocolbuffers/protobuf/releases"; }
 	@echo "Bootstrap complete"
 
@@ -48,10 +49,34 @@ proto-gen:
 			echo "No protobuf files found under proto/"; \
 			exit 0; \
 		fi; \
-		command -v protoc >/dev/null 2>&1 || { echo "ERROR: protoc not found. Run 'make bootstrap' to install prerequisites."; exit 1; }; \
+		command -v buf >/dev/null 2>&1 || { echo "ERROR: buf not found. Install via 'go install github.com/bufbuild/buf/cmd/buf@latest' or use nix develop."; exit 1; }; \
+		echo "Linting protobuf schemas..."; \
+		buf lint; \
+		PROTOC_BIN=""; \
+		if [ -n "$${PROTOBUF_PREFIX:-}" ]; then \
+			if [ -x "$${PROTOBUF_PREFIX}/bin/protoc" ]; then \
+				PROTOC_BIN="$${PROTOBUF_PREFIX}/bin/protoc"; \
+			fi; \
+		fi; \
+		if [ -z "$$PROTOC_BIN" ]; then \
+			if [ -x /opt/homebrew/opt/protobuf/bin/protoc ]; then \
+				PROTOC_BIN="/opt/homebrew/opt/protobuf/bin/protoc"; \
+			elif [ -x /usr/local/opt/protobuf/bin/protoc ]; then \
+				PROTOC_BIN="/usr/local/opt/protobuf/bin/protoc"; \
+			fi; \
+		fi; \
+		if [ -z "$$PROTOC_BIN" ]; then \
+			if command -v protoc >/dev/null 2>&1; then \
+				PROTOC_BIN="$$(command -v protoc)"; \
+			else \
+				echo "ERROR: protoc not found. Run 'make bootstrap' to install prerequisites."; \
+				exit 1; \
+			fi; \
+		fi; \
 		echo "Generating protobuf code..."; \
+		rm -rf gen/go gen/cpp; \
 		mkdir -p gen/go gen/cpp; \
-		PATH="$$PATH:$(GOBIN)" protoc -I proto \
+		PATH="$$PATH:$(GOBIN)" "$$PROTOC_BIN" -I proto \
 			--go_out=gen/go --go_opt=paths=source_relative \
 			--go-grpc_out=gen/go --go-grpc_opt=paths=source_relative \
 			--cpp_out=gen/cpp \

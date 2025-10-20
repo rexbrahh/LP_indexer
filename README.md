@@ -45,18 +45,19 @@ flake.nix & default.nix    Nix development shells
 ## Getting Started
 1. Install Nix or ensure Go (1.22+), Clang 17, and protoc are available.
 2. Install the NATS CLI (`brew install nats-io/nats-tools/nats` or `CGO_ENABLED=0 go install github.com/nats-io/natscli/nats@latest`).
-3. Install `golangci-lint` (`brew install golangci-lint` or `go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest`).
-4. Run `make bootstrap` to pull toolchains, install git hooks, and fetch proto deps.
-5. Use `make proto-gen` whenever protobuf contracts change.
-6. Start dependencies locally with `make up` (NATS, ClickHouse, MinIO, Postgres). Set `BOOTSTRAP_JETSTREAM=1 make up` to auto-seed the JetStream stream and consumer after the containers start.
-7. Apply ClickHouse schemas (optional for local testing):
+3. Install the Buf CLI (`brew install bufbuild/buf/buf` or `go install github.com/bufbuild/buf/cmd/buf@latest`).
+4. Install `golangci-lint` (`brew install golangci-lint` or `go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest`).
+5. Run `make bootstrap` to pull toolchains, install git hooks, and fetch proto deps.
+6. Use `make proto-gen` whenever protobuf contracts change.
+7. Start dependencies locally with `make up` (NATS, ClickHouse, MinIO, Postgres). Set `BOOTSTRAP_JETSTREAM=1 make up` to auto-seed the JetStream stream and consumer after the containers start.
+8. Apply ClickHouse schemas (optional for local testing):
 
    ```bash
    CLICKHOUSE_DSN=clickhouse://127.0.0.1:9000/default \
    make ops.clickhouse.apply
    ```
 
-8. Run the geyser ingestor once credentials are set:
+9. Run the geyser ingestor once credentials are set:
 
    ```bash
    PROGRAMS_YAML_PATH=ops/programs.yaml \
