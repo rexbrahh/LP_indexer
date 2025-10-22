@@ -15,7 +15,11 @@ CREATE TABLE IF NOT EXISTS trades (
   quote_in      Decimal(38, 0),
   quote_out     Decimal(38, 0),
   price_q32     Int64,
-  provisional   UInt8
+  reserves_base  Decimal(38, 0),
+  reserves_quote Decimal(38, 0),
+  fee_bps        UInt16,
+  provisional    UInt8,
+  is_undo        UInt8
 ) ENGINE = MergeTree
 PARTITION BY toDate(ts)
 ORDER BY (chain_id, pool_id, slot, sig, idx);

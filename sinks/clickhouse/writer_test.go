@@ -247,9 +247,9 @@ func TestWriteTrades_BatchFlush(t *testing.T) {
 
 	// Test with exactly batch size trades
 	trades := []Trade{
-		{Slot: 100, Signature: "sig1", BlockTime: time.Now(), PoolID: "pool1", Amount: 1.0},
-		{Slot: 101, Signature: "sig2", BlockTime: time.Now(), PoolID: "pool1", Amount: 2.0},
-		{Slot: 102, Signature: "sig3", BlockTime: time.Now(), PoolID: "pool1", Amount: 3.0},
+		{ChainID: 501, Slot: 100, Timestamp: time.Now(), Signature: "sig1", PoolID: "pool1"},
+		{ChainID: 501, Slot: 101, Timestamp: time.Now(), Signature: "sig2", PoolID: "pool1"},
+		{ChainID: 501, Slot: 102, Timestamp: time.Now(), Signature: "sig3", PoolID: "pool1"},
 	}
 
 	err := mock.WriteTrades(ctx, trades)
@@ -282,11 +282,11 @@ func TestWriteTrades_MultipleBatches(t *testing.T) {
 
 	// Test with 5 trades (should trigger 2 flushes)
 	trades := []Trade{
-		{Slot: 100, Signature: "sig1", BlockTime: time.Now(), PoolID: "pool1", Amount: 1.0},
-		{Slot: 101, Signature: "sig2", BlockTime: time.Now(), PoolID: "pool1", Amount: 2.0},
-		{Slot: 102, Signature: "sig3", BlockTime: time.Now(), PoolID: "pool1", Amount: 3.0},
-		{Slot: 103, Signature: "sig4", BlockTime: time.Now(), PoolID: "pool1", Amount: 4.0},
-		{Slot: 104, Signature: "sig5", BlockTime: time.Now(), PoolID: "pool1", Amount: 5.0},
+		{ChainID: 501, Slot: 100, Timestamp: time.Now(), Signature: "sig1", PoolID: "pool1"},
+		{ChainID: 501, Slot: 101, Timestamp: time.Now(), Signature: "sig2", PoolID: "pool1"},
+		{ChainID: 501, Slot: 102, Timestamp: time.Now(), Signature: "sig3", PoolID: "pool1"},
+		{ChainID: 501, Slot: 103, Timestamp: time.Now(), Signature: "sig4", PoolID: "pool1"},
+		{ChainID: 501, Slot: 104, Timestamp: time.Now(), Signature: "sig5", PoolID: "pool1"},
 	}
 
 	err := mock.WriteTrades(ctx, trades)

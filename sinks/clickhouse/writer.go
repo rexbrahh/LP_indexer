@@ -34,12 +34,28 @@ type Writer struct {
 }
 
 type tradeBatch struct {
-	slots      proto.ColUInt64
-	signatures proto.ColStr
-	blockTimes proto.ColDateTime64
-	poolIDs    proto.ColStr
-	amounts    proto.ColFloat64
-	count      int
+	chainIDs      proto.ColUInt16
+	slots         proto.ColUInt64
+	timestamps    proto.ColDateTime64
+	signatures    proto.ColStr
+	indices       proto.ColUInt32
+	programIDs    proto.ColStr
+	pools         proto.ColStr
+	mintBase      proto.ColStr
+	mintQuote     proto.ColStr
+	decBase       proto.ColUInt8
+	decQuote      proto.ColUInt8
+	baseIn        proto.ColDecimal128
+	baseOut       proto.ColDecimal128
+	quoteIn       proto.ColDecimal128
+	quoteOut      proto.ColDecimal128
+	priceQ32      proto.ColInt64
+	reservesBase  proto.ColDecimal128
+	reservesQuote proto.ColDecimal128
+	feeBps        proto.ColUInt16
+	provisional   proto.ColUInt8
+	isUndo        proto.ColUInt8
+	count         int
 }
 
 type candleBatch struct {
@@ -65,20 +81,36 @@ func NewWithConfig(ctx context.Context, cfg Config) (*Writer, error) {
 	}
 
 	blockTimes := proto.ColDateTime64{}
-	blockTimes.WithPrecision(proto.PrecisionNano)
+	blockTimes.WithPrecision(proto.PrecisionMilli)
 
 	timestamps := proto.ColDateTime64{}
-	timestamps.WithPrecision(proto.PrecisionNano)
+	timestamps.WithPrecision(proto.PrecisionMilli)
 
 	w := &Writer{
 		config: cfg,
 		client: client,
 		tradesBatch: &tradeBatch{
-			slots:      proto.ColUInt64{},
-			signatures: proto.ColStr{},
-			blockTimes: blockTimes,
-			poolIDs:    proto.ColStr{},
-			amounts:    proto.ColFloat64{},
+			chainIDs:      proto.ColUInt16{},
+			slots:         proto.ColUInt64{},
+			timestamps:    blockTimes,
+			signatures:    proto.ColStr{},
+			indices:       proto.ColUInt32{},
+			programIDs:    proto.ColStr{},
+			pools:         proto.ColStr{},
+			mintBase:      proto.ColStr{},
+			mintQuote:     proto.ColStr{},
+			decBase:       proto.ColUInt8{},
+			decQuote:      proto.ColUInt8{},
+			baseIn:        proto.ColDecimal128{},
+			baseOut:       proto.ColDecimal128{},
+			quoteIn:       proto.ColDecimal128{},
+			quoteOut:      proto.ColDecimal128{},
+			priceQ32:      proto.ColInt64{},
+			reservesBase:  proto.ColDecimal128{},
+			reservesQuote: proto.ColDecimal128{},
+			feeBps:        proto.ColUInt16{},
+			provisional:   proto.ColUInt8{},
+			isUndo:        proto.ColUInt8{},
 		},
 		candlesBatch: &candleBatch{
 			timestamps: timestamps,
@@ -209,21 +241,61 @@ func parseDSN(dsn string) (ch.Options, error) {
 
 // Trade represents a single DEX swap event
 type Trade struct {
-	Slot      uint64
-	Signature string
-	BlockTime time.Time
-	PoolID    string
-	Amount    float64
+	ChainID       uint16
+	Slot          uint64
+	Timestamp     time.Time
+	Signature     string
+	Index         uint32
+	ProgramID     string
+	PoolID        string
+	MintBase      string
+	MintQuote     string
+	DecBase       uint8
+	DecQuote      uint8
+	BaseIn        uint64
+	BaseOut       uint64
+	QuoteIn       uint64
+	QuoteOut      uint64
+	PriceQ32      int64
+	ReservesBase  uint64
+	ReservesQuote uint64
+	FeeBps        uint16
+	Provisional   bool
+	IsUndo        bool
 }
 
 // WriteTrades adds trades to the batch and flushes if batch size is reached
 func (w *Writer) WriteTrades(ctx context.Context, trades []Trade) error {
 	for _, trade := range trades {
+		w.tradesBatch.chainIDs.Append(trade.ChainID)
 		w.tradesBatch.slots.Append(trade.Slot)
+		w.tradesBatch.timestamps.Append(trade.Timestamp)
 		w.tradesBatch.signatures.Append(trade.Signature)
-		w.tradesBatch.blockTimes.Append(trade.BlockTime)
-		w.tradesBatch.poolIDs.Append(trade.PoolID)
-		w.tradesBatch.amounts.Append(trade.Amount)
+		w.tradesBatch.indices.Append(trade.Index)
+		w.tradesBatch.programIDs.Append(trade.ProgramID)
+		w.tradesBatch.pools.Append(trade.PoolID)
+		w.tradesBatch.mintBase.Append(trade.MintBase)
+		w.tradesBatch.mintQuote.Append(trade.MintQuote)
+		w.tradesBatch.decBase.Append(trade.DecBase)
+		w.tradesBatch.decQuote.Append(trade.DecQuote)
+		w.tradesBatch.baseIn.Append(decimal128FromUint64(trade.BaseIn))
+		w.tradesBatch.baseOut.Append(decimal128FromUint64(trade.BaseOut))
+		w.tradesBatch.quoteIn.Append(decimal128FromUint64(trade.QuoteIn))
+		w.tradesBatch.quoteOut.Append(decimal128FromUint64(trade.QuoteOut))
+		w.tradesBatch.priceQ32.Append(trade.PriceQ32)
+		w.tradesBatch.reservesBase.Append(decimal128FromUint64(trade.ReservesBase))
+		w.tradesBatch.reservesQuote.Append(decimal128FromUint64(trade.ReservesQuote))
+		w.tradesBatch.feeBps.Append(trade.FeeBps)
+		if trade.Provisional {
+			w.tradesBatch.provisional.Append(1)
+		} else {
+			w.tradesBatch.provisional.Append(0)
+		}
+		if trade.IsUndo {
+			w.tradesBatch.isUndo.Append(1)
+		} else {
+			w.tradesBatch.isUndo.Append(0)
+		}
 		w.tradesBatch.count++
 
 		if w.tradesBatch.count >= w.config.BatchSize {
@@ -276,11 +348,27 @@ func (w *Writer) flushTrades(ctx context.Context) error {
 	}
 
 	input := proto.Input{
+		{Name: "chain_id", Data: w.tradesBatch.chainIDs},
 		{Name: "slot", Data: w.tradesBatch.slots},
-		{Name: "signature", Data: w.tradesBatch.signatures},
-		{Name: "block_time", Data: w.tradesBatch.blockTimes},
-		{Name: "pool_id", Data: w.tradesBatch.poolIDs},
-		{Name: "amount", Data: w.tradesBatch.amounts},
+		{Name: "ts", Data: w.tradesBatch.timestamps},
+		{Name: "sig", Data: w.tradesBatch.signatures},
+		{Name: "idx", Data: w.tradesBatch.indices},
+		{Name: "program_id", Data: w.tradesBatch.programIDs},
+		{Name: "pool_id", Data: w.tradesBatch.pools},
+		{Name: "mint_base", Data: w.tradesBatch.mintBase},
+		{Name: "mint_quote", Data: w.tradesBatch.mintQuote},
+		{Name: "dec_base", Data: w.tradesBatch.decBase},
+		{Name: "dec_quote", Data: w.tradesBatch.decQuote},
+		{Name: "base_in", Data: w.tradesBatch.baseIn},
+		{Name: "base_out", Data: w.tradesBatch.baseOut},
+		{Name: "quote_in", Data: w.tradesBatch.quoteIn},
+		{Name: "quote_out", Data: w.tradesBatch.quoteOut},
+		{Name: "price_q32", Data: w.tradesBatch.priceQ32},
+		{Name: "reserves_base", Data: w.tradesBatch.reservesBase},
+		{Name: "reserves_quote", Data: w.tradesBatch.reservesQuote},
+		{Name: "fee_bps", Data: w.tradesBatch.feeBps},
+		{Name: "provisional", Data: w.tradesBatch.provisional},
+		{Name: "is_undo", Data: w.tradesBatch.isUndo},
 	}
 
 	if err := w.client.Do(ctx, ch.Query{
@@ -291,13 +379,29 @@ func (w *Writer) flushTrades(ctx context.Context) error {
 	}
 
 	// Reset batch
+	w.tradesBatch.chainIDs = proto.ColUInt16{}
 	w.tradesBatch.slots = proto.ColUInt64{}
+	timestamps := proto.ColDateTime64{}
+	timestamps.WithPrecision(proto.PrecisionNano)
+	w.tradesBatch.timestamps = timestamps
 	w.tradesBatch.signatures = proto.ColStr{}
-	blockTimes := proto.ColDateTime64{}
-	blockTimes.WithPrecision(proto.PrecisionNano)
-	w.tradesBatch.blockTimes = blockTimes
-	w.tradesBatch.poolIDs = proto.ColStr{}
-	w.tradesBatch.amounts = proto.ColFloat64{}
+	w.tradesBatch.indices = proto.ColUInt32{}
+	w.tradesBatch.programIDs = proto.ColStr{}
+	w.tradesBatch.pools = proto.ColStr{}
+	w.tradesBatch.mintBase = proto.ColStr{}
+	w.tradesBatch.mintQuote = proto.ColStr{}
+	w.tradesBatch.decBase = proto.ColUInt8{}
+	w.tradesBatch.decQuote = proto.ColUInt8{}
+	w.tradesBatch.baseIn = proto.ColDecimal128{}
+	w.tradesBatch.baseOut = proto.ColDecimal128{}
+	w.tradesBatch.quoteIn = proto.ColDecimal128{}
+	w.tradesBatch.quoteOut = proto.ColDecimal128{}
+	w.tradesBatch.priceQ32 = proto.ColInt64{}
+	w.tradesBatch.reservesBase = proto.ColDecimal128{}
+	w.tradesBatch.reservesQuote = proto.ColDecimal128{}
+	w.tradesBatch.feeBps = proto.ColUInt16{}
+	w.tradesBatch.provisional = proto.ColUInt8{}
+	w.tradesBatch.isUndo = proto.ColUInt8{}
 	w.tradesBatch.count = 0
 
 	return nil
@@ -347,6 +451,10 @@ func (w *Writer) Flush(ctx context.Context) error {
 		return err
 	}
 	return w.flushCandles(ctx)
+}
+
+func decimal128FromUint64(v uint64) proto.Decimal128 {
+	return proto.Decimal128(proto.Int128FromUInt64(v))
 }
 
 // Close flushes remaining data and closes the connection
