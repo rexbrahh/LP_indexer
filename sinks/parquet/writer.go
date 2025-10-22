@@ -36,6 +36,7 @@ type candleRow struct {
 	ChainID      int32  `parquet:"name=chain_id,type=INT32"`
 	PairID       string `parquet:"name=pair_id,type=BYTE_ARRAY,convertedtype=UTF8"`
 	PoolID       string `parquet:"name=pool_id,type=BYTE_ARRAY,convertedtype=UTF8"`
+	Scope        string `parquet:"name=scope,type=BYTE_ARRAY,convertedtype=UTF8"`
 	Timeframe    string `parquet:"name=timeframe,type=BYTE_ARRAY,convertedtype=UTF8"`
 	WindowStart  int64  `parquet:"name=window_start,type=INT64,logicaltype=TIMESTAMP(isAdjustedToUTC=true,unit=SECONDS)"`
 	Provisional  bool   `parquet:"name=provisional,type=BOOLEAN"`
@@ -98,11 +99,16 @@ func (w *Writer) AppendCandle(ctx context.Context, candle *dexv1.Candle) error {
 	if timeframe == "" {
 		timeframe = "unknown"
 	}
+	scope := "pair"
+	if candle.GetPoolId() != "" {
+		scope = "pool"
+	}
 
 	row := candleRow{
 		ChainID:      int32(candle.GetChainId()),
 		PairID:       candle.GetPairId(),
 		PoolID:       candle.GetPoolId(),
+		Scope:        scope,
 		Timeframe:    timeframe,
 		WindowStart:  int64(candle.GetWindowStart()),
 		Provisional:  candle.GetProvisional(),
@@ -123,8 +129,9 @@ func (w *Writer) AppendCandle(ctx context.Context, candle *dexv1.Candle) error {
 		row.VolQuoteLo = vq.GetLo()
 	}
 
-	bucket := append(w.buckets[timeframe], row)
-	w.buckets[timeframe] = bucket
+	key := bucketKey(timeframe, scope)
+	bucket := append(w.buckets[key], row)
+	w.buckets[key] = bucket
 
 	if len(bucket) >= w.cfg.BatchRows || time.Since(w.lastFlush) >= w.cfg.FlushInterval {
 		return w.flushLocked(ctx)
@@ -147,20 +154,21 @@ func (w *Writer) flushLocked(ctx context.Context) error {
 		return nil
 	}
 
-	for timeframe, rows := range w.buckets {
+	for key, rows := range w.buckets {
 		if len(rows) == 0 {
 			continue
 		}
-		if err := w.writeBucket(ctx, timeframe, rows); err != nil {
+		timeframe, scope := splitBucketKey(key)
+		if err := w.writeBucket(ctx, timeframe, scope, rows); err != nil {
 			return err
 		}
-		w.buckets[timeframe] = w.buckets[timeframe][:0]
+		w.buckets[key] = w.buckets[key][:0]
 	}
 	w.lastFlush = time.Now()
 	return nil
 }
 
-func (w *Writer) writeBucket(ctx context.Context, timeframe string, rows []candleRow) error {
+func (w *Writer) writeBucket(ctx context.Context, timeframe, scope string, rows []candleRow) error {
 	buf := bytes.NewBuffer(nil)
 
 	writer := parquet.NewGenericWriter[candleRow](buf, parquet.Compression(&snappy.Codec{}))
@@ -171,7 +179,7 @@ func (w *Writer) writeBucket(ctx context.Context, timeframe string, rows []candl
 		return fmt.Errorf("close parquet writer: %w", err)
 	}
 
-	key := w.objectKey(timeframe)
+	key := w.objectKey(timeframe, scope)
 
 	_, err := w.uploader.UploadWithContext(ctx, &s3manager.UploadInput{
 		Bucket:      aws.String(w.cfg.Bucket),
@@ -185,9 +193,21 @@ func (w *Writer) writeBucket(ctx context.Context, timeframe string, rows []candl
 	return nil
 }
 
-func (w *Writer) objectKey(timeframe string) string {
+func (w *Writer) objectKey(timeframe, scope string) string {
 	prefix := strings.TrimSuffix(w.cfg.Prefix, "/")
 	date := time.Now().UTC().Format("2006-01-02")
 	filename := fmt.Sprintf("candles-%d.parquet", time.Now().UnixNano())
-	return filepath.Join(prefix, fmt.Sprintf("timeframe=%s", timeframe), fmt.Sprintf("date=%s", date), filename)
+	return filepath.Join(prefix, fmt.Sprintf("timeframe=%s", timeframe), fmt.Sprintf("scope=%s", scope), fmt.Sprintf("date=%s", date), filename)
+}
+
+func bucketKey(timeframe, scope string) string {
+	return timeframe + "|" + scope
+}
+
+func splitBucketKey(key string) (string, string) {
+	parts := strings.SplitN(key, "|", 2)
+	if len(parts) != 2 {
+		return key, "unknown"
+	}
+	return parts[0], parts[1]
 }
