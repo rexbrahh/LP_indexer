@@ -63,6 +63,14 @@ func (p *failoverStubPublisher) PublishSwap(_ context.Context, ev *dexv1.SwapEve
 	return nil
 }
 
+func (p *failoverStubPublisher) PublishBlockHead(context.Context, *dexv1.BlockHead) error {
+	return nil
+}
+
+func (p *failoverStubPublisher) PublishTxMeta(context.Context, *dexv1.TxMeta) error {
+	return nil
+}
+
 func TestFailoverServiceSwitchesToFallback(t *testing.T) {
 	var fallbackInvoked sync.WaitGroup
 	fallbackInvoked.Add(1)

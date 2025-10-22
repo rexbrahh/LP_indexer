@@ -1,4 +1,4 @@
-package internal
+package pools
 
 import (
 	"encoding/binary"
@@ -6,18 +6,18 @@ import (
 )
 
 const (
-	poolHeaderLen            = 8 // anchor discriminator
-	poolConfigOffset         = poolHeaderLen + 1
-	poolConfigEnd            = poolConfigOffset + 32
-	ammHeaderLen             = 8
-	ammTradeFeeOffset        = ammHeaderLen + 1 + 2 + 32 + 4
-	ammRequiredLength        = ammTradeFeeOffset + 4
-	ApproxConfigAccountMax   = 256
+	poolHeaderLen          = 8 // anchor discriminator
+	poolConfigOffset       = poolHeaderLen + 1
+	poolConfigEnd          = poolConfigOffset + 32
+	ammHeaderLen           = 8
+	ammTradeFeeOffset      = ammHeaderLen + 1 + 2 + 32 + 4
+	ammRequiredLength      = ammTradeFeeOffset + 4
+	ApproxConfigAccountMax = 256
 )
 
 var (
 	ammConfigDiscriminator = [8]byte{218, 244, 33, 104, 203, 203, 43, 111}
-	poolStateDiscriminator  = [8]byte{247, 237, 227, 245, 215, 195, 222, 70}
+	poolStateDiscriminator = [8]byte{247, 237, 227, 245, 215, 195, 222, 70}
 )
 
 func HasAmmConfigDiscriminator(data []byte) bool {

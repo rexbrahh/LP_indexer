@@ -1,4 +1,4 @@
-package internal
+package pools
 
 import (
 	"encoding/binary"

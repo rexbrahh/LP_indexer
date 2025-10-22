@@ -59,6 +59,26 @@ func (p *Publisher) PublishSwap(ctx context.Context, event *dexv1.SwapEvent) err
 	return p.publish(ctx, subject, event, msgID)
 }
 
+// PublishBlockHead publishes a BlockHead update to JetStream.
+func (p *Publisher) PublishBlockHead(ctx context.Context, head *dexv1.BlockHead) error {
+	if head == nil {
+		return errors.New("block head is nil")
+	}
+	subject := fmt.Sprintf("%s.blocks.head", p.cfg.SubjectRoot)
+	msgID := fmt.Sprintf("501:%d", head.GetSlot())
+	return p.publish(ctx, subject, head, msgID)
+}
+
+// PublishTxMeta publishes a TxMeta update to JetStream.
+func (p *Publisher) PublishTxMeta(ctx context.Context, meta *dexv1.TxMeta) error {
+	if meta == nil {
+		return errors.New("tx meta is nil")
+	}
+	subject := fmt.Sprintf("%s.tx.meta", p.cfg.SubjectRoot)
+	msgID := fmt.Sprintf("501:%d:%s", meta.GetSlot(), meta.GetSig())
+	return p.publish(ctx, subject, meta, msgID)
+}
+
 // PublishPoolSnapshot publishes a PoolSnapshot update.
 func (p *Publisher) PublishPoolSnapshot(ctx context.Context, snap *dexv1.PoolSnapshot) error {
 	if snap == nil {

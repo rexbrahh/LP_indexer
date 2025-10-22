@@ -6,9 +6,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/mr-tron/base58/base58"
-
 	dexv1 "github.com/rexbrahh/lp-indexer/gen/go/dex/sol/v1"
+	"github.com/rexbrahh/lp-indexer/ingestor/common"
+	swapdecoder "github.com/rexbrahh/lp-indexer/ingestor/decoder"
 
 	pb "github.com/rpcpool/yellowstone-grpc/examples/golang/proto"
 )
@@ -42,6 +42,8 @@ type Client struct {
 	mu     sync.RWMutex
 	health HealthSnapshot
 
+	decoder *swapdecoder.Decoder
+
 	cancel    context.CancelFunc
 	newStream func(*Config) (streamClient, error)
 }
@@ -62,6 +64,7 @@ func NewClient(cfg *Config) (*Client, error) {
 		health: HealthSnapshot{
 			Healthy: false,
 		},
+		decoder: swapdecoder.New(nil),
 		newStream: func(cfg *Config) (streamClient, error) {
 			return NewStreamClient(cfg)
 		},
@@ -177,16 +180,22 @@ func (c *Client) run(ctx context.Context, startSlot uint64, updates chan<- Updat
 					s.LastSlot = slot
 				}
 			})
-			c.emitUpdate(ctx, update, updates)
+			if err := c.handleSubscribeUpdate(ctx, update, updates); err != nil {
+				select {
+				case errs <- err:
+				default:
+				}
+			}
 		}
 	}
 }
 
-func (c *Client) emitUpdate(ctx context.Context, in *pb.SubscribeUpdate, out chan<- Update) {
+func (c *Client) handleSubscribeUpdate(ctx context.Context, in *pb.SubscribeUpdate, out chan<- Update) error {
 	switch u := in.GetUpdateOneof().(type) {
 	case *pb.SubscribeUpdate_BlockMeta:
+		c.decoder.HandleBlockMeta(u.BlockMeta)
 		if u.BlockMeta == nil {
-			return
+			return nil
 		}
 		head := &dexv1.BlockHead{
 			ChainId: 501,
@@ -197,13 +206,24 @@ func (c *Client) emitUpdate(ctx context.Context, in *pb.SubscribeUpdate, out cha
 			head.TsSec = uint64(ts.GetTimestamp())
 		}
 		c.sendUpdate(ctx, out, Update{BlockHead: head})
+	case *pb.SubscribeUpdate_Account:
+		c.decoder.HandleAccount(u.Account)
 	case *pb.SubscribeUpdate_Transaction:
-		if update := convertTransaction(u.Transaction); update != nil {
-			c.sendUpdate(ctx, out, *update)
+		meta := common.ConvertTxMeta(u.Transaction)
+		if meta != nil {
+			c.sendUpdate(ctx, out, Update{TxMeta: meta})
+		}
+		events, err := c.decoder.DecodeTransaction(u.Transaction)
+		if err != nil {
+			return fmt.Errorf("decode transaction: %w", err)
+		}
+		for _, ev := range events {
+			c.sendUpdate(ctx, out, Update{Swap: ev})
 		}
 	default:
-		// Ignore other update types for now.
+		// Ignore remaining update types.
 	}
+	return nil
 }
 
 func (c *Client) sendUpdate(ctx context.Context, out chan<- Update, update Update) {
@@ -211,33 +231,6 @@ func (c *Client) sendUpdate(ctx context.Context, out chan<- Update, update Updat
 	case out <- update:
 	case <-ctx.Done():
 	}
-}
-
-func convertTransaction(tx *pb.SubscribeUpdateTransaction) *Update {
-	if tx == nil {
-		return nil
-	}
-	info := tx.GetTransaction()
-	if info == nil {
-		return nil
-	}
-	meta := info.GetMeta()
-	if meta == nil {
-		return nil
-	}
-	signature := base58.Encode(info.GetSignature())
-	update := &Update{
-		TxMeta: &dexv1.TxMeta{
-			ChainId: 501,
-			Slot:    tx.GetSlot(),
-			Sig:     signature,
-			Success: meta.GetErr() == nil,
-			CuUsed:  meta.GetComputeUnitsConsumed(),
-			CuPrice: 0,
-			LogMsgs: meta.GetLogMessages(),
-		},
-	}
-	return update
 }
 
 func slotFromUpdate(update *pb.SubscribeUpdate) uint64 {

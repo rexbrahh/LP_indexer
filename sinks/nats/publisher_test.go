@@ -102,6 +102,33 @@ func TestPublisherPublishesMessages(t *testing.T) {
 		t.Fatalf("unexpected snapshot msg id %q", got)
 	}
 
+	head := &dexv1.BlockHead{
+		ChainId: 501,
+		Slot:    777,
+		Status:  "confirmed",
+	}
+	if err := pub.PublishBlockHead(ctx, head); err != nil {
+		t.Fatalf("PublishBlockHead() error = %v", err)
+	}
+	msg = getLastMsg(t, js, "DEX", "dex.sol.blocks.head")
+	if got := msg.Header.Get("Nats-Msg-Id"); got != "501:777" {
+		t.Fatalf("unexpected block head msg id %q", got)
+	}
+
+	txMeta := &dexv1.TxMeta{
+		ChainId: 501,
+		Slot:    888,
+		Sig:     "sig456",
+		Success: true,
+	}
+	if err := pub.PublishTxMeta(ctx, txMeta); err != nil {
+		t.Fatalf("PublishTxMeta() error = %v", err)
+	}
+	msg = getLastMsg(t, js, "DEX", "dex.sol.tx.meta")
+	if got := msg.Header.Get("Nats-Msg-Id"); got != "501:888:sig456" {
+		t.Fatalf("unexpected tx meta msg id %q", got)
+	}
+
 	ctxTimeout, cancel := pub.WithTimeout(context.Background())
 	defer cancel()
 	if _, ok := ctxTimeout.Deadline(); !ok {

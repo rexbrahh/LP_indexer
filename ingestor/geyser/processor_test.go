@@ -15,11 +15,12 @@ import (
 	"time"
 
 	"github.com/mr-tron/base58/base58"
+	proto "google.golang.org/protobuf/proto"
 
 	ray "github.com/rexbrahh/lp-indexer/decoder/raydium"
 	dexv1 "github.com/rexbrahh/lp-indexer/gen/go/dex/sol/v1"
 	"github.com/rexbrahh/lp-indexer/ingestor/common"
-	"github.com/rexbrahh/lp-indexer/ingestor/geyser/internal"
+	poolmeta "github.com/rexbrahh/lp-indexer/ingestor/internal/pools"
 
 	pb "github.com/rpcpool/yellowstone-grpc/examples/golang/proto"
 )
@@ -52,7 +53,7 @@ func TestProcessorPublishesRaydiumSwap(t *testing.T) {
 	tradeRate := uint32(3000)
 	configKey := generateAddress(0xAA)
 	configData := buildConfigData(tradeRate)
-	if rate, err := internal.DecodeAmmConfig(configData); err != nil || rate != tradeRate {
+	if rate, err := poolmeta.DecodeAmmConfig(configData); err != nil || rate != tradeRate {
 		t.Fatalf("DecodeAmmConfig mismatch: rate=%d err=%v", rate, err)
 	}
 	processor.handleAccount(&pb.SubscribeUpdateAccount{
@@ -62,12 +63,8 @@ func TestProcessorPublishesRaydiumSwap(t *testing.T) {
 			Data:   configData,
 		},
 	})
-	configStr := base58.Encode(configKey)
-	if processor.configFees[configStr] == 0 {
-		t.Fatalf("expected config fee cache to be populated")
-	}
 	poolData := buildPoolData(configKey)
-	if decoded, err := internal.DecodeRaydiumPool(poolData); err != nil || !bytes.Equal(decoded, configKey) {
+	if decoded, err := poolmeta.DecodeRaydiumPool(poolData); err != nil || !bytes.Equal(decoded, configKey) {
 		t.Fatalf("DecodeRaydiumPool mismatch err=%v", err)
 	}
 	processor.handleAccount(&pb.SubscribeUpdateAccount{
@@ -77,14 +74,24 @@ func TestProcessorPublishesRaydiumSwap(t *testing.T) {
 			Data:   poolData,
 		},
 	})
-	if processor.poolFees[fixture.PoolAddress] == 0 {
-		t.Fatalf("expected pool fee cache to be populated")
+
+	ctx := context.Background()
+
+	blockMeta := &pb.SubscribeUpdate{
+		UpdateOneof: &pb.SubscribeUpdate_BlockMeta{
+			BlockMeta: &pb.SubscribeUpdateBlockMeta{
+				Slot:      fixture.Slot,
+				BlockTime: &pb.UnixTimestamp{Timestamp: fixture.Timestamp},
+			},
+		},
+	}
+	if err := processor.HandleUpdate(ctx, blockMeta); err != nil {
+		t.Fatalf("HandleUpdate block meta: %v", err)
 	}
 
 	update := buildRaydiumUpdate(t, fixture)
-
-	if err := processor.HandleUpdate(context.Background(), update); err != nil {
-		t.Fatalf("HandleUpdate returned error: %v", err)
+	if err := processor.HandleUpdate(ctx, update); err != nil {
+		t.Fatalf("HandleUpdate transaction returned error: %v", err)
 	}
 
 	if len(pub.events) != 1 {
@@ -114,16 +121,181 @@ func TestProcessorPublishesRaydiumSwap(t *testing.T) {
 	if event.FeeBps != expectedFee {
 		t.Fatalf("fee_bps=%d want %d", event.FeeBps, expectedFee)
 	}
+
+	if len(pub.txMetas) != 1 {
+		t.Fatalf("expected tx meta to be published")
+	}
+	meta := pub.txMetas[0]
+	if meta.GetSig() != fixture.Signature {
+		t.Fatalf("unexpected tx signature %s", meta.GetSig())
+	}
+	if !meta.GetSuccess() {
+		t.Fatal("expected successful tx meta")
+	}
+
+	if len(pub.blockHeads) != 1 {
+		t.Fatalf("expected 1 block head, got %d", len(pub.blockHeads))
+	}
+	head := pub.blockHeads[0]
+	if head.GetStatus() != "confirmed" {
+		t.Fatalf("unexpected block head status %s", head.GetStatus())
+	}
 }
 
 type stubPublisher struct {
-	events []*dexv1.SwapEvent
+	events     []*dexv1.SwapEvent
+	blockHeads []*dexv1.BlockHead
+	txMetas    []*dexv1.TxMeta
 }
 
 func (s *stubPublisher) PublishSwap(_ context.Context, ev *dexv1.SwapEvent) error {
-	clone := *ev
-	s.events = append(s.events, &clone)
+	clone := proto.Clone(ev).(*dexv1.SwapEvent)
+	s.events = append(s.events, clone)
 	return nil
+}
+
+func (s *stubPublisher) PublishBlockHead(_ context.Context, head *dexv1.BlockHead) error {
+	clone := proto.Clone(head).(*dexv1.BlockHead)
+	s.blockHeads = append(s.blockHeads, clone)
+	return nil
+}
+
+func (s *stubPublisher) PublishTxMeta(_ context.Context, meta *dexv1.TxMeta) error {
+	clone := proto.Clone(meta).(*dexv1.TxMeta)
+	s.txMetas = append(s.txMetas, clone)
+	return nil
+}
+
+func TestProcessorFinalizesSlotPublishesNonProvisional(t *testing.T) {
+	fixture := loadRaydiumFixture(t, "swap_tx_1.json")
+	pub := &stubPublisher{}
+	cache := common.NewMemorySlotTimeCache()
+	cache.Set(fixture.Slot, time.Unix(fixture.Timestamp, 0))
+	processor := NewProcessor(pub, cache, nil)
+	ctx := context.Background()
+
+	configKey := generateAddress(0xAA)
+	processor.handleAccount(&pb.SubscribeUpdateAccount{
+		Account: &pb.SubscribeUpdateAccountInfo{
+			Pubkey: configKey,
+			Owner:  mustDecodeBase58(t, ray.ProgramID),
+			Data:   buildConfigData(3000),
+		},
+	})
+	processor.handleAccount(&pb.SubscribeUpdateAccount{
+		Account: &pb.SubscribeUpdateAccountInfo{
+			Pubkey: mustDecodeBase58(t, fixture.PoolAddress),
+			Owner:  mustDecodeBase58(t, ray.ProgramID),
+			Data:   buildPoolData(configKey),
+		},
+	})
+
+	processor.HandleUpdate(ctx, &pb.SubscribeUpdate{
+		UpdateOneof: &pb.SubscribeUpdate_BlockMeta{
+			BlockMeta: &pb.SubscribeUpdateBlockMeta{
+				Slot:      fixture.Slot,
+				BlockTime: &pb.UnixTimestamp{Timestamp: fixture.Timestamp},
+			},
+		},
+	})
+
+	if err := processor.HandleUpdate(ctx, buildRaydiumUpdate(t, fixture)); err != nil {
+		t.Fatalf("HandleUpdate transaction: %v", err)
+	}
+
+	finalize := &pb.SubscribeUpdate{
+		UpdateOneof: &pb.SubscribeUpdate_Slot{
+			Slot: &pb.SubscribeUpdateSlot{
+				Slot:   fixture.Slot,
+				Status: pb.SlotStatus_SLOT_FINALIZED,
+			},
+		},
+	}
+	if err := processor.HandleUpdate(ctx, finalize); err != nil {
+		t.Fatalf("HandleUpdate finalize: %v", err)
+	}
+
+	if len(pub.events) != 2 {
+		t.Fatalf("expected two published swaps, got %d", len(pub.events))
+	}
+	final := pub.events[1]
+	if final.Provisional {
+		t.Fatalf("finalized event should not be provisional")
+	}
+	if final.IsUndo {
+		t.Fatalf("finalized event should not be undo")
+	}
+
+	if len(pub.blockHeads) != 2 {
+		t.Fatalf("expected block head finalize publish, got %d", len(pub.blockHeads))
+	}
+	if pub.blockHeads[1].GetStatus() != "finalized" {
+		t.Fatalf("unexpected finalized block head status %s", pub.blockHeads[1].GetStatus())
+	}
+}
+
+func TestProcessorEmitsUndoOnDeadSlot(t *testing.T) {
+	fixture := loadRaydiumFixture(t, "swap_tx_1.json")
+	pub := &stubPublisher{}
+	cache := common.NewMemorySlotTimeCache()
+	cache.Set(fixture.Slot, time.Unix(fixture.Timestamp, 0))
+	processor := NewProcessor(pub, cache, nil)
+	ctx := context.Background()
+
+	configKey := generateAddress(0xAA)
+	processor.handleAccount(&pb.SubscribeUpdateAccount{
+		Account: &pb.SubscribeUpdateAccountInfo{
+			Pubkey: configKey,
+			Owner:  mustDecodeBase58(t, ray.ProgramID),
+			Data:   buildConfigData(3000),
+		},
+	})
+	processor.handleAccount(&pb.SubscribeUpdateAccount{
+		Account: &pb.SubscribeUpdateAccountInfo{
+			Pubkey: mustDecodeBase58(t, fixture.PoolAddress),
+			Owner:  mustDecodeBase58(t, ray.ProgramID),
+			Data:   buildPoolData(configKey),
+		},
+	})
+	processor.HandleUpdate(ctx, &pb.SubscribeUpdate{
+		UpdateOneof: &pb.SubscribeUpdate_BlockMeta{
+			BlockMeta: &pb.SubscribeUpdateBlockMeta{
+				Slot:      fixture.Slot,
+				BlockTime: &pb.UnixTimestamp{Timestamp: fixture.Timestamp},
+			},
+		},
+	})
+	processor.HandleUpdate(ctx, buildRaydiumUpdate(t, fixture))
+
+	dead := &pb.SubscribeUpdate{
+		UpdateOneof: &pb.SubscribeUpdate_Slot{
+			Slot: &pb.SubscribeUpdateSlot{
+				Slot:   fixture.Slot,
+				Status: pb.SlotStatus_SLOT_DEAD,
+			},
+		},
+	}
+	if err := processor.HandleUpdate(ctx, dead); err != nil {
+		t.Fatalf("HandleUpdate dead slot: %v", err)
+	}
+
+	if len(pub.events) != 2 {
+		t.Fatalf("expected undo publish, got %d events", len(pub.events))
+	}
+	undo := pub.events[1]
+	if undo.Provisional {
+		t.Fatalf("undo event should not be provisional")
+	}
+	if !undo.IsUndo {
+		t.Fatalf("expected undo flag on dead slot swap")
+	}
+
+	if len(pub.blockHeads) != 2 {
+		t.Fatalf("expected block head dead publish, got %d", len(pub.blockHeads))
+	}
+	if pub.blockHeads[1].GetStatus() != "dead" {
+		t.Fatalf("unexpected block head status %s", pub.blockHeads[1].GetStatus())
+	}
 }
 
 func loadRaydiumFixture(t *testing.T, filename string) *raydiumFixture {

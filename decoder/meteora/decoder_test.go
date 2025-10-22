@@ -37,6 +37,10 @@ func TestDecodeSwapEvent_BaseSold(t *testing.T) {
 		ProgramID: "cpamdpZCGKUy5JxQXB4dcpGPiikHawvSWAd6mEn1sGG",
 		Kind:      PoolKindCPMM,
 		Timestamp: time.Unix(1_700_000_000, 0).UTC(),
+		Logs: []string{
+			"Program log: cpmm_reserves base=600000000 quote=2000000",
+			"Program log: fee_bps=25",
+		},
 		PreTokenBalances: []*pb.TokenBalance{
 			tokenBalance(inputIdx, "So11111111111111111111111111111111111111112", "1000000000", 9),
 		},
@@ -69,6 +73,12 @@ func TestDecodeSwapEvent_BaseSold(t *testing.T) {
 	if event.BaseDec != 9 || event.QuoteDec != 6 {
 		t.Fatalf("unexpected decimals base=%d quote=%d", event.BaseDec, event.QuoteDec)
 	}
+	if event.RealReservesBase != 600000000 || event.RealReservesQuote != 2000000 {
+		t.Fatalf("unexpected real reserves base=%d quote=%d", event.RealReservesBase, event.RealReservesQuote)
+	}
+	if event.FeeBps != 25 {
+		t.Fatalf("unexpected fee bps %d", event.FeeBps)
+	}
 }
 
 func TestDecodeSwapEvent_BaseBought(t *testing.T) {
@@ -97,6 +107,10 @@ func TestDecodeSwapEvent_BaseBought(t *testing.T) {
 		ProgramID:           "Eo7WjKq67rjJQSZxS6z3YkapzY3eMj6Xy8X5EQVn5UaB",
 		Kind:                PoolKindDLMM,
 		Timestamp:           time.Unix(1_700_100_000, 0).UTC(),
+		Logs: []string{
+			"Program log: virtual_reserves base=2500000 quote=780000000",
+			"Program log: fee_bps=30",
+		},
 		PreTokenBalances: []*pb.TokenBalance{
 			tokenBalance(inputIdx, "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", "2000000", 6),
 		},
@@ -125,6 +139,12 @@ func TestDecodeSwapEvent_BaseBought(t *testing.T) {
 	}
 	if event.DecBase != 9 || event.DecQuote != 6 {
 		t.Fatalf("unexpected canonical decimals base=%d quote=%d", event.DecBase, event.DecQuote)
+	}
+	if event.VirtualReservesBase != 2500000 || event.VirtualReservesQuote != 780000000 {
+		t.Fatalf("unexpected virtual reserves base=%d quote=%d", event.VirtualReservesBase, event.VirtualReservesQuote)
+	}
+	if event.FeeBps != 30 {
+		t.Fatalf("unexpected fee bps %d", event.FeeBps)
 	}
 }
 

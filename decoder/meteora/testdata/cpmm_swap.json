@@ -1,0 +1,70 @@
+{
+  "program_id": "cpamdpZCGKUy5JxQXB4dcpGPiikHawvSWAd6mEn1sGG",
+  "signature": "4mrvmNtmLrH6G9MHw14uTrLgB36ckDcgqwFQwwRxcRYJCBwymzWJ6juDoQh6Ynq19vnMcPpZjj45Q6mNEA6kdxNF",
+  "slot": 654321,
+  "timestamp": 1700200000,
+  "accounts": {
+    "authority": "7VDNjuhymdWkPh1isgKCw36ESFCKf6uieAyzbVJWiyxs",
+    "pool": "7Z8ftDAzMvoyXnGEJye8DurzgQQXLAbYCaeeesM7UKHa",
+    "input_account": "7d3y2WdzxE7CfsWjkGy3WndkvZcj1EHMkzKJiFPiDecH",
+    "output_account": "7gyGAp71YXQRoxmFBaHxofQXAipvgHyBKPyxmdSJxyvz",
+    "vault_a": "7ktZK7a28phex41kcsct6YBHQt38MMezsoecq1UuiKFh",
+    "vault_b": "7porTR32j7zt69GG4AwoPQx3f3FL2RLpSDKGtPXWTeaQ",
+    "mint_base": "So11111111111111111111111111111111111111112",
+    "mint_quote": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+    "payer": "7tj9biW3KRJ7EEWmVUGigHiouCTXhV2dzcyvwma7Cyu7",
+    "token_program_a": "7xeSk1y3uibLNKmGvmbdyAVa9MfjNYiTZ2eb19chxKDp",
+    "token_program_b": "82ZjtKS4W1tZWR1nN4vZG3GLPWsw3cQH7SKF4XfJheYX"
+  },
+  "account_order": [
+    "authority",
+    "pool",
+    "input_account",
+    "output_account",
+    "vault_a",
+    "vault_b",
+    "mint_base",
+    "mint_quote",
+    "payer",
+    "token_program_a",
+    "token_program_b",
+    "program"
+  ],
+  "instruction_accounts": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+  "logs": [
+    "Program log: cpmm_reserves base=600000000 quote=2000000",
+    "Program log: fee_bps=25"
+  ],
+  "pre_token_balances": [
+    {
+      "account_index": 2,
+      "mint": "So11111111111111111111111111111111111111112",
+      "owner": "7Z8ftDAzMvoyXnGEJye8DurzgQQXLAbYCaeeesM7UKHa",
+      "amount": "1000000000",
+      "decimals": 9
+    }
+  ],
+  "post_token_balances": [
+    {
+      "account_index": 2,
+      "mint": "So11111111111111111111111111111111111111112",
+      "owner": "7Z8ftDAzMvoyXnGEJye8DurzgQQXLAbYCaeeesM7UKHa",
+      "amount": "500000000",
+      "decimals": 9
+    },
+    {
+      "account_index": 3,
+      "mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+      "owner": "7Z8ftDAzMvoyXnGEJye8DurzgQQXLAbYCaeeesM7UKHa",
+      "amount": "1500000",
+      "decimals": 6
+    }
+  ],
+  "expected": {
+    "base_in": 500000000,
+    "quote_out": 1500000,
+    "real_base": 600000000,
+    "real_quote": 2000000,
+    "fee_bps": 25
+  }
+}

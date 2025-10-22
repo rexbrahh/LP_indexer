@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/rexbrahh/lp-indexer/decoder/common"
@@ -133,6 +134,8 @@ func DecodeSwapEvent(_ []byte, ctx *InstructionContext) (*SwapEvent, error) {
 
 		BaseDecreased: baseDecreased,
 	}
+
+	applyLogMetadata(event, ctx)
 
 	return event, nil
 }
@@ -270,4 +273,90 @@ func decimalsForMint(ctx *InstructionContext, mint string, deltas ...*tokenBalan
 		}
 	}
 	return 0
+}
+
+func applyLogMetadata(event *SwapEvent, ctx *InstructionContext) {
+	if event == nil || ctx == nil || len(ctx.Logs) == 0 {
+		return
+	}
+
+	for _, line := range ctx.Logs {
+		tokens := tokenize(line)
+		if len(tokens) == 0 {
+			continue
+		}
+
+		if fee, ok := extractUint(tokens, "fee_bps"); ok {
+			event.FeeBps = uint32(fee)
+		}
+
+		switch ctx.Kind {
+		case PoolKindDLMM:
+			if base, quote, ok := extractReserves(tokens, "virtual_reserves"); ok {
+				event.VirtualReservesBase = base
+				event.VirtualReservesQuote = quote
+			}
+		case PoolKindCPMM:
+			if base, quote, ok := extractReserves(tokens, "cpmm_reserves"); ok {
+				event.RealReservesBase = base
+				event.RealReservesQuote = quote
+			}
+		}
+	}
+}
+
+func tokenize(line string) []string {
+	fields := strings.Fields(line)
+	tokens := make([]string, len(fields))
+	for i, f := range fields {
+		tokens[i] = strings.Trim(f, " ,:")
+	}
+	return tokens
+}
+
+func extractUint(tokens []string, key string) (uint64, bool) {
+	prefix := key + "="
+	for _, tok := range tokens {
+		if strings.HasPrefix(tok, prefix) {
+			valStr := strings.TrimPrefix(tok, prefix)
+			if valStr == "" {
+				continue
+			}
+			val, err := strconv.ParseUint(valStr, 10, 64)
+			if err == nil {
+				return val, true
+			}
+		}
+	}
+	return 0, false
+}
+
+func extractReserves(tokens []string, marker string) (uint64, uint64, bool) {
+	found := false
+	var baseVal, quoteVal uint64
+	for _, tok := range tokens {
+		lower := strings.ToLower(tok)
+		if lower == marker || strings.Contains(lower, marker) {
+			found = true
+			continue
+		}
+		if strings.HasPrefix(tok, "base=") {
+			val, err := strconv.ParseUint(strings.TrimPrefix(tok, "base="), 10, 64)
+			if err != nil {
+				return 0, 0, false
+			}
+			baseVal = val
+		}
+		if strings.HasPrefix(tok, "quote=") {
+			val, err := strconv.ParseUint(strings.TrimPrefix(tok, "quote="), 10, 64)
+			if err != nil {
+				return 0, 0, false
+			}
+			quoteVal = val
+		}
+	}
+	if !found || (baseVal == 0 && quoteVal == 0) {
+		return 0, 0, false
+	}
+	return baseVal, quoteVal, true
 }
