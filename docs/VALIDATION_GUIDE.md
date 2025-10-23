@@ -36,3 +36,34 @@ Steps executed:
 
 - Harness outputs the failing command/logs.
 - Use `scripts/run_candle_e2e.sh` locally to reproduce.
+
+---
+
+# Sink E2E Harness
+
+- Workflow: `.github/workflows/sink-e2e.yml`
+- Local run: `make sink-e2e INPUT=fixtures/sink_sample.json`
+
+## What it does
+
+1. Boots ClickHouse, MinIO, and NATS JetStream (CI services or local Docker).
+2. Launches the ClickHouse and Parquet sink services (`cmd/sink/clickhouse`, `cmd/sink/parquet`).
+3. Replays sample swap events via `cmd/tools/sinkreplay`, covering provisional, finalized, and undo flows.
+4. Asserts:
+   - ClickHouse `trades` table receives finalized/undo rows.
+   - Parquet objects land under `s3://dex-parquet/timeframe=/scope=/date=`.
+
+## Environment Variables
+
+```
+NATS_URL, NATS_STREAM, SUBJECT_ROOT
+CLICKHOUSE_DSN, CLICKHOUSE_DB, CLICKHOUSE_TRADES_TABLE
+PARQUET_ENDPOINT, PARQUET_BUCKET, PARQUET_ACCESS_KEY, PARQUET_SECRET_KEY
+```
+
+## Expected Output
+
+- `clickhouse-client` query listing swaps with `provisional` and `is_undo` flags.
+- `aws s3 ls` showing newly written Parquet files.
+
+If the harness stalls, inspect `/tmp/clickhouse-sink.log` and `/tmp/parquet-sink.log` for sink errors.

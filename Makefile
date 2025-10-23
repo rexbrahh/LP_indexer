@@ -30,6 +30,7 @@ help:
 	@echo "  run.bridge          - Run the legacy bridge with local subject map"
 	@echo "  run.ingestor.geyser - Run the geyser ingestor (Raydium swaps -> JetStream)"
 	@echo "  candle-e2e         - Run candle replay + ClickHouse validation harness"
+	@echo "  sink-e2e           - Run ClickHouse/Parquet sink end-to-end harness"
 	@echo "  check.bridge.metrics - Assert bridge Prometheus metrics respond"
 	@echo "  demo.geyser        - Run Geyser streaming demo against a configured endpoint"
 
@@ -200,6 +201,9 @@ check.bridge.metrics:
 
 candle-e2e:
 	@scripts/run_candle_e2e.sh $(INPUT)
+
+sink-e2e:
+	@scripts/run_sink_e2e.sh $(INPUT)
 
 demo.geyser:
 	@GEYSER_ENDPOINT=$${GEYSER_ENDPOINT} \
