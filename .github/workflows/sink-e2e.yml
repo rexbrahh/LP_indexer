@@ -60,7 +60,8 @@ jobs:
         run: |
           pip install --quiet awscli
           until aws --endpoint-url http://127.0.0.1:9000 s3 ls; do sleep 2; done
-          aws --endpoint-url http://127.0.0.1:9000 s3 mb s3://dex-parquet || true
+          aws --endpoint-url http://127.0.0.1:9000 s3 rb s3://dex-parquet --force || true
+          aws --endpoint-url http://127.0.0.1:9000 s3 mb s3://dex-parquet
         env:
           AWS_ACCESS_KEY_ID: minio
           AWS_SECRET_ACCESS_KEY: minio123

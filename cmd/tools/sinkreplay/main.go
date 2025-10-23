@@ -197,7 +197,7 @@ func publishProto(ctx context.Context, js nats.JetStreamContext, subject string,
 	case <-js.PublishAsyncComplete():
 		return nil
 	case <-ctx.Done():
-		return ctx.Err
+		return fmt.Errorf("publish context cancelled for subject %s", subject)
 	case <-time.After(3 * time.Second):
 		return fmt.Errorf("publish timeout for subject %s", subject)
 	}

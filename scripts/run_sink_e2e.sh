@@ -10,7 +10,6 @@ SUBJECT_ROOT=${SUBJECT_ROOT:-dex.sol}
 CLICKHOUSE_DSN=${CLICKHOUSE_DSN:-tcp://127.0.0.1:9000}
 CLICKHOUSE_DB=${CLICKHOUSE_DB:-default}
 CLICKHOUSE_TRADES_TABLE=${CLICKHOUSE_TRADES_TABLE:-trades}
-CLICKHOUSE_CANDLES_TABLE=${CLICKHOUSE_CANDLES_TABLE:-ohlcv_1m}
 
 PARQUET_ENDPOINT=${PARQUET_ENDPOINT:-http://127.0.0.1:9000}
 PARQUET_BUCKET=${PARQUET_BUCKET:-dex-parquet}
@@ -37,7 +36,6 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# Ensure ClickHouse schema is present and truncate target table
 if command -v clickhouse-client >/dev/null 2>&1; then
   clickhouse-client --query "CREATE DATABASE IF NOT EXISTS ${CLICKHOUSE_DB}" >/dev/null
   clickhouse-client < ops/clickhouse/all.sql >/dev/null
@@ -47,9 +45,9 @@ else
   exit 1
 fi
 
-# Prepare MinIO bucket
 if command -v aws >/dev/null 2>&1; then
-  aws --endpoint-url "${PARQUET_ENDPOINT}" s3 mb "s3://${PARQUET_BUCKET}" >/dev/null 2>&1 || true
+  aws --endpoint-url "${PARQUET_ENDPOINT}" s3 rb "s3://${PARQUET_BUCKET}" --force >/dev/null 2>&1 || true
+  aws --endpoint-url "${PARQUET_ENDPOINT}" s3 mb "s3://${PARQUET_BUCKET}" >/dev/null
 else
   echo "aws CLI not found" >&2
   exit 1
@@ -65,7 +63,6 @@ export CH_SINK_FLUSH_INTERVAL_MS=${CH_SINK_FLUSH_INTERVAL_MS:-500}
 export CH_SINK_DSN="${CLICKHOUSE_DSN}"
 export CH_SINK_DATABASE="${CLICKHOUSE_DB}"
 export CH_SINK_TRADES_TABLE="${CLICKHOUSE_TRADES_TABLE}"
-export CH_SINK_CANDLES_TABLE="${CLICKHOUSE_CANDLES_TABLE}"
 
 export PARQUET_NATS_URL="${NATS_URL}"
 export PARQUET_NATS_STREAM="${NATS_STREAM}"
@@ -85,20 +82,15 @@ export S3_BUCKET="${PARQUET_BUCKET}"
 export S3_ACCESS_KEY="${PARQUET_ACCESS_KEY}"
 export S3_SECRET_KEY="${PARQUET_SECRET_KEY}"
 
-# Start sinks
 (go run ./cmd/sink/clickhouse >/tmp/clickhouse-sink.log 2>&1 &) && CH_PID=$!
 (go run ./cmd/sink/parquet >/tmp/parquet-sink.log 2>&1 &) && PQ_PID=$!
 
 sleep 2
 
-# Replay sample events
-GO_RUN_FLAGS=""
-go run ./cmd/tools/sinkreplay --input "${INPUT}" --nats-url "${NATS_URL}" --stream "${NATS_STREAM}" --subject-root "${SUBJECT_ROOT}" --delay-ms 50
+go run ./cmd/tools/sinkreplay --input "${INPUT}" --nats-url "${NATS_URL}" --subject-root "${SUBJECT_ROOT}" --delay-ms 50
 
-# Allow sinks to flush
 sleep 3
 
-# Stop sinks
 kill "${CH_PID}" 2>/dev/null || true
 wait "${CH_PID}" 2>/dev/null || true
 CH_PID=""
@@ -107,8 +99,27 @@ kill "${PQ_PID}" 2>/dev/null || true
 wait "${PQ_PID}" 2>/dev/null || true
 PQ_PID=""
 
-# Verify ClickHouse rows
-clickhouse-client --query "SELECT slot, sig, index, provisional, is_undo FROM ${CLICKHOUSE_DB}.${CLICKHOUSE_TRADES_TABLE} ORDER BY slot, sig, index"
+EXPECTED=$(jq -r '[.[] | select(.type=="swap" and (.provisional==false or (.provisional==null and .is_undo==true))) ] | length' "${INPUT}")
 
-# Verify Parquet objects
+actual_rows=$(clickhouse-client --query "SELECT count() FROM ${CLICKHOUSE_DB}.${CLICKHOUSE_TRADES_TABLE} WHERE provisional = 0" | tr -d '\n')
+undo_rows=$(clickhouse-client --query "SELECT count() FROM ${CLICKHOUSE_DB}.${CLICKHOUSE_TRADES_TABLE} WHERE is_undo = 1" | tr -d '\n')
+
+if [[ "${actual_rows}" != "${EXPECTED}" ]]; then
+  echo "expected ${EXPECTED} finalized rows, got ${actual_rows}" >&2
+  exit 1
+fi
+
+expected_undo=$(jq -r '[.[] | select(.type=="swap" and .is_undo==true)] | length' "${INPUT}")
+if [[ "${undo_rows}" != "${expected_undo}" ]]; then
+  echo "expected ${expected_undo} undo rows, got ${undo_rows}" >&2
+  exit 1
+fi
+
+OBJECTS=$(aws --endpoint-url "${PARQUET_ENDPOINT}" s3 ls "s3://${PARQUET_BUCKET}" --recursive | wc -l | tr -d ' ')
+if [[ "${OBJECTS}" -lt 1 ]]; then
+  echo "no parquet objects written" >&2
+  exit 1
+fi
+
 aws --endpoint-url "${PARQUET_ENDPOINT}" s3 ls "s3://${PARQUET_BUCKET}" --recursive
+clickhouse-client --query "SELECT slot, sig, index, provisional, is_undo FROM ${CLICKHOUSE_DB}.${CLICKHOUSE_TRADES_TABLE} ORDER BY slot, sig, index"
