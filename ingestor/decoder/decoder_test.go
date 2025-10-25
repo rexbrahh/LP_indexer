@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -86,6 +87,65 @@ func TestDecoder_DecodeTransaction_Raydium(t *testing.T) {
 	}
 }
 
+func TestDecoder_DecodeTransaction_RaydiumDecodeError(t *testing.T) {
+	fixture := loadRaydiumFixture(t, "swap_tx_1.json")
+
+	cache := common.NewMemorySlotTimeCache()
+	cache.Set(fixture.Slot, time.Unix(fixture.Timestamp, 0))
+	dec := New(cache)
+
+	tradeRate := uint32(3000)
+	configKey := generateAddress(0xAB)
+	configData := buildConfigData(tradeRate)
+	dec.HandleAccount(&pb.SubscribeUpdateAccount{
+		Account: &pb.SubscribeUpdateAccountInfo{
+			Pubkey: configKey,
+			Owner:  mustDecodeBase58(t, ray.ProgramID),
+			Data:   configData,
+		},
+	})
+	poolsBytes := mustDecodeBase58(t, fixture.PoolAddress)
+	poolData := buildPoolData(configKey)
+	dec.HandleAccount(&pb.SubscribeUpdateAccount{
+		Account: &pb.SubscribeUpdateAccountInfo{
+			Pubkey: poolsBytes,
+			Owner:  mustDecodeBase58(t, ray.ProgramID),
+			Data:   poolData,
+		},
+	})
+
+	dec.HandleBlockMeta(&pb.SubscribeUpdateBlockMeta{
+		Slot:      fixture.Slot,
+		BlockTime: &pb.UnixTimestamp{Timestamp: fixture.Timestamp},
+	})
+
+	tx := buildRaydiumTransaction(t, fixture)
+	info := tx.GetTransaction()
+	if info == nil {
+		t.Fatal("missing transaction info")
+	}
+	inner := info.GetTransaction()
+	if inner == nil || inner.Message == nil || len(inner.Message.Instructions) == 0 {
+		t.Fatal("unexpected transaction shape")
+	}
+	inner.Message.Instructions[0].Data = []byte{0xFF}
+
+	events, err := dec.DecodeTransaction(tx)
+	if err == nil {
+		t.Fatal("expected decode error")
+	}
+	var decodeErr *DecodeError
+	if !errors.As(err, &decodeErr) {
+		t.Fatalf("expected DecodeError, got %T", err)
+	}
+	if decodeErr.Program != ray.ProgramID {
+		t.Fatalf("unexpected program id %s", decodeErr.Program)
+	}
+	if events != nil {
+		t.Fatalf("expected nil events on error, got %d", len(events))
+	}
+}
+
 func TestDecoder_DecodeTransaction_Orca(t *testing.T) {
 	cache := common.NewMemorySlotTimeCache()
 	slot := uint64(987654)
@@ -152,6 +212,33 @@ func TestDecoder_DecodeTransaction_Orca(t *testing.T) {
 	}
 	if ev.DecBase != 6 || ev.DecQuote != 6 {
 		t.Fatalf("unexpected decimals base=%d quote=%d", ev.DecBase, ev.DecQuote)
+	}
+}
+
+func TestDecoder_DecodeTransaction_OrcaMissingPoolMetadata(t *testing.T) {
+	cache := common.NewMemorySlotTimeCache()
+	slot := uint64(11111)
+	timestamp := int64(1_800_000_000)
+	cache.Set(slot, time.Unix(timestamp, 0))
+
+	dec := New(cache)
+
+	poolKey := generateAddress(0xEE)
+	mintA := generateAddress(0xAA)
+	mintB := generateAddress(0xBB)
+	vaultA := generateAddress(0xCC)
+	vaultB := generateAddress(0xDD)
+	feeRate := uint16(2500)
+
+	// Intentionally skip HandleAccount so orca pool metadata is missing.
+
+	tx := buildOrcaTransaction(t, slot, poolKey, mintA, mintB, vaultA, vaultB, feeRate)
+	events, err := dec.DecodeTransaction(tx)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(events) != 0 {
+		t.Fatalf("expected zero swap events, got %d", len(events))
 	}
 }
 
@@ -257,6 +344,46 @@ func TestDecoder_DecodeTransaction_MeteoraDLMM(t *testing.T) {
 	}
 	if fx.Expected.VirtualQuote > 0 && ev.ReservesQuote != fx.Expected.VirtualQuote {
 		t.Fatalf("reserves_quote=%d want %d", ev.ReservesQuote, fx.Expected.VirtualQuote)
+	}
+}
+
+func TestDecoder_DecodeTransaction_MeteoraDecodeError(t *testing.T) {
+	fx := loadMeteoraFixture(t, "cpmm_swap.json")
+
+	cache := common.NewMemorySlotTimeCache()
+	cache.Set(fx.Slot, time.Unix(fx.Timestamp, 0))
+	dec := New(cache)
+
+	dec.HandleBlockMeta(&pb.SubscribeUpdateBlockMeta{
+		Slot:      fx.Slot,
+		BlockTime: &pb.UnixTimestamp{Timestamp: fx.Timestamp},
+	})
+
+	tx := buildMeteoraTransaction(t, fx)
+	info := tx.GetTransaction()
+	if info == nil {
+		t.Fatal("missing transaction info")
+	}
+	meta := info.GetMeta()
+	if meta == nil {
+		t.Fatal("missing transaction meta")
+	}
+	meta.PreTokenBalances = nil
+	meta.PostTokenBalances = nil
+
+	events, err := dec.DecodeTransaction(tx)
+	if err == nil {
+		t.Fatal("expected decode error")
+	}
+	var decodeErr *DecodeError
+	if !errors.As(err, &decodeErr) {
+		t.Fatalf("expected DecodeError, got %T", err)
+	}
+	if decodeErr.Program != fx.ProgramID {
+		t.Fatalf("decode error program=%s want %s", decodeErr.Program, fx.ProgramID)
+	}
+	if events != nil {
+		t.Fatalf("expected nil events when decoding fails, got %d", len(events))
 	}
 }
 
