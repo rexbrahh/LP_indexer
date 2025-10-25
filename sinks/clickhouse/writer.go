@@ -359,13 +359,13 @@ func (w *Writer) flushTrades(ctx context.Context) error {
 		{Name: "mint_quote", Data: w.tradesBatch.mintQuote},
 		{Name: "dec_base", Data: w.tradesBatch.decBase},
 		{Name: "dec_quote", Data: w.tradesBatch.decQuote},
-		{Name: "base_in", Data: w.tradesBatch.baseIn},
-		{Name: "base_out", Data: w.tradesBatch.baseOut},
-		{Name: "quote_in", Data: w.tradesBatch.quoteIn},
-		{Name: "quote_out", Data: w.tradesBatch.quoteOut},
+		{Name: "base_in", Data: proto.Alias(&w.tradesBatch.baseIn, proto.ColumnTypeDecimal.With("38", "0"))},
+		{Name: "base_out", Data: proto.Alias(&w.tradesBatch.baseOut, proto.ColumnTypeDecimal.With("38", "0"))},
+		{Name: "quote_in", Data: proto.Alias(&w.tradesBatch.quoteIn, proto.ColumnTypeDecimal.With("38", "0"))},
+		{Name: "quote_out", Data: proto.Alias(&w.tradesBatch.quoteOut, proto.ColumnTypeDecimal.With("38", "0"))},
 		{Name: "price_q32", Data: w.tradesBatch.priceQ32},
-		{Name: "reserves_base", Data: w.tradesBatch.reservesBase},
-		{Name: "reserves_quote", Data: w.tradesBatch.reservesQuote},
+		{Name: "reserves_base", Data: proto.Alias(&w.tradesBatch.reservesBase, proto.ColumnTypeDecimal.With("38", "0"))},
+		{Name: "reserves_quote", Data: proto.Alias(&w.tradesBatch.reservesQuote, proto.ColumnTypeDecimal.With("38", "0"))},
 		{Name: "fee_bps", Data: w.tradesBatch.feeBps},
 		{Name: "provisional", Data: w.tradesBatch.provisional},
 		{Name: "is_undo", Data: w.tradesBatch.isUndo},
@@ -382,7 +382,7 @@ func (w *Writer) flushTrades(ctx context.Context) error {
 	w.tradesBatch.chainIDs = proto.ColUInt16{}
 	w.tradesBatch.slots = proto.ColUInt64{}
 	timestamps := proto.ColDateTime64{}
-	timestamps.WithPrecision(proto.PrecisionNano)
+	timestamps.WithPrecision(proto.PrecisionMilli)
 	w.tradesBatch.timestamps = timestamps
 	w.tradesBatch.signatures = proto.ColStr{}
 	w.tradesBatch.indices = proto.ColUInt32{}
@@ -432,7 +432,7 @@ func (w *Writer) flushCandles(ctx context.Context) error {
 
 	// Reset batch
 	timestamps := proto.ColDateTime64{}
-	timestamps.WithPrecision(proto.PrecisionNano)
+	timestamps.WithPrecision(proto.PrecisionMilli)
 	w.candlesBatch.timestamps = timestamps
 	w.candlesBatch.poolIDs = proto.ColStr{}
 	w.candlesBatch.opens = proto.ColFloat64{}
