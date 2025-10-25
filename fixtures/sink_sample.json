@@ -86,5 +86,34 @@
     "provisional": false,
     "is_undo": true
   },
+  {
+    "type": "candle",
+    "chain_id": 501,
+    "pair_id": "So11111111111111111111111111111111111111112-EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+    "pool_id": "poolA111111111111111111111111111111111111111",
+    "timeframe": "1m",
+    "window_start": 1700000000,
+    "open_px_q32": 125000000,
+    "high_px_q32": 130000000,
+    "low_px_q32": 120000000,
+    "close_px_q32": 127500000,
+    "vol_base": 500000000,
+    "vol_quote": 1500000,
+    "trades": 2
+  },
+  {
+    "type": "candle",
+    "chain_id": 501,
+    "pair_id": "TokenMintA11111111111111111111111111111111-TokenMintB22222222222222222222222222222222",
+    "timeframe": "1s",
+    "window_start": 1700000500,
+    "open_px_q32": 88000000,
+    "high_px_q32": 90500000,
+    "low_px_q32": 87000000,
+    "close_px_q32": 89000000,
+    "vol_base": 270000,
+    "vol_quote": 430000,
+    "trades": 1
+  },
   {"type": "block_head", "slot": 102, "timestamp": 1700000500, "status": "dead"}
 ]

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/nats-io/nats.go"
@@ -18,12 +19,14 @@ import (
 type event struct {
 	Type          string   `json:"type"`
 	Slot          uint64   `json:"slot"`
+	ChainID       uint64   `json:"chain_id"`
 	Timestamp     int64    `json:"timestamp"`
 	Status        string   `json:"status"`
 	Signature     string   `json:"signature"`
 	Index         uint32   `json:"index"`
 	ProgramID     string   `json:"program_id"`
 	PoolID        string   `json:"pool_id"`
+	PairID        string   `json:"pair_id"`
 	MintBase      string   `json:"mint_base"`
 	MintQuote     string   `json:"mint_quote"`
 	DecBase       uint32   `json:"dec_base"`
@@ -37,8 +40,18 @@ type event struct {
 	FeeBps        uint32   `json:"fee_bps"`
 	Provisional   *bool    `json:"provisional"`
 	IsUndo        bool     `json:"is_undo"`
+	IsCorrection  *bool    `json:"is_correction"`
 	Success       *bool    `json:"success"`
 	LogMsgs       []string `json:"log_msgs"`
+	Timeframe     string   `json:"timeframe"`
+	WindowStart   uint64   `json:"window_start"`
+	OpenPxQ32     int64    `json:"open_px_q32"`
+	HighPxQ32     int64    `json:"high_px_q32"`
+	LowPxQ32      int64    `json:"low_px_q32"`
+	ClosePxQ32    int64    `json:"close_px_q32"`
+	VolBase       uint64   `json:"vol_base"`
+	VolQuote      uint64   `json:"vol_quote"`
+	Trades        uint32   `json:"trades"`
 	SleepMillis   int      `json:"sleep_ms"`
 }
 
@@ -93,10 +106,14 @@ func main() {
 }
 
 func publishEvent(ctx context.Context, js nats.JetStreamContext, root string, ev event) error {
+	chainID := ev.ChainID
+	if chainID == 0 {
+		chainID = 501
+	}
 	switch ev.Type {
 	case "block_head":
 		msg := &dexv1.BlockHead{
-			ChainId: 501,
+			ChainId: chainID,
 			Slot:    ev.Slot,
 			TsSec:   uint64(ev.Timestamp),
 			Status:  ev.Status,
@@ -105,14 +122,14 @@ func publishEvent(ctx context.Context, js nats.JetStreamContext, root string, ev
 		if err != nil {
 			return err
 		}
-		return publishProto(ctx, js, fmt.Sprintf("%s.blocks.head", root), data, fmt.Sprintf("501:%d:head:%s", ev.Slot, ev.Status))
+		return publishProto(ctx, js, fmt.Sprintf("%s.blocks.head", root), data, fmt.Sprintf("%d:%d:head:%s", chainID, ev.Slot, ev.Status))
 	case "tx_meta":
 		success := true
 		if ev.Success != nil {
 			success = *ev.Success
 		}
 		msg := &dexv1.TxMeta{
-			ChainId: 501,
+			ChainId: chainID,
 			Slot:    ev.Slot,
 			Sig:     ev.Signature,
 			Success: success,
@@ -124,14 +141,14 @@ func publishEvent(ctx context.Context, js nats.JetStreamContext, root string, ev
 		if err != nil {
 			return err
 		}
-		return publishProto(ctx, js, fmt.Sprintf("%s.tx.meta", root), data, fmt.Sprintf("501:%d:%s:meta", ev.Slot, ev.Signature))
+		return publishProto(ctx, js, fmt.Sprintf("%s.tx.meta", root), data, fmt.Sprintf("%d:%d:%s:meta", chainID, ev.Slot, ev.Signature))
 	case "swap":
 		provisional := true
 		if ev.Provisional != nil {
 			provisional = *ev.Provisional
 		}
 		msg := &dexv1.SwapEvent{
-			ChainId:       501,
+			ChainId:       chainID,
 			Slot:          ev.Slot,
 			Sig:           ev.Signature,
 			Index:         ev.Index,
@@ -156,7 +173,54 @@ func publishEvent(ctx context.Context, js nats.JetStreamContext, root string, ev
 			return err
 		}
 		subject := fmt.Sprintf("%s.%s.swap", root, programSegment(ev.ProgramID))
-		return publishProto(ctx, js, subject, data, fmt.Sprintf("501:%d:%s:%d:%t:%t", ev.Slot, ev.Signature, ev.Index, provisional, ev.IsUndo))
+		return publishProto(ctx, js, subject, data, fmt.Sprintf("%d:%d:%s:%d:%t:%t", chainID, ev.Slot, ev.Signature, ev.Index, provisional, ev.IsUndo))
+	case "candle":
+		provisional := false
+		if ev.Provisional != nil {
+			provisional = *ev.Provisional
+		}
+		isCorrection := false
+		if ev.IsCorrection != nil {
+			isCorrection = *ev.IsCorrection
+		}
+		msg := &dexv1.Candle{
+			ChainId:      chainID,
+			PairId:       ev.PairID,
+			PoolId:       ev.PoolID,
+			Timeframe:    ev.Timeframe,
+			WindowStart:  ev.WindowStart,
+			Provisional:  provisional,
+			IsCorrection: isCorrection,
+			OpenPxQ32:    ev.OpenPxQ32,
+			HighPxQ32:    ev.HighPxQ32,
+			LowPxQ32:     ev.LowPxQ32,
+			ClosePxQ32:   ev.ClosePxQ32,
+			Trades:       ev.Trades,
+		}
+		if ev.VolBase != 0 {
+			msg.VolBase = &dexv1.U128{Lo: ev.VolBase}
+		}
+		if ev.VolQuote != 0 {
+			msg.VolQuote = &dexv1.U128{Lo: ev.VolQuote}
+		}
+		subjectScope := "pair"
+		primaryID := ev.PairID
+		if msg.PoolId != "" {
+			subjectScope = "pool"
+			primaryID = msg.PoolId
+		}
+		timeframe := msg.Timeframe
+		if timeframe == "" {
+			timeframe = "unknown"
+			msg.Timeframe = timeframe
+		}
+		subject := fmt.Sprintf("%s.candle.%s.%s", root, subjectScope, strings.ToLower(timeframe))
+		data, err := proto.Marshal(msg)
+		if err != nil {
+			return err
+		}
+		msgID := fmt.Sprintf("%d:%s:%s:%s:%d", msg.ChainId, subjectScope, primaryID, strings.ToLower(timeframe), msg.WindowStart)
+		return publishProto(ctx, js, subject, data, msgID)
 	default:
 		return fmt.Errorf("unsupported event type %q", ev.Type)
 	}
