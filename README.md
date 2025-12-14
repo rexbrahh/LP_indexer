@@ -70,7 +70,7 @@ flake.nix & default.nix    Nix development shells
    in progress.
 
    For a quick streaming demo without full decoder wiring, see
-   [`docs/INGESTOR_GEYSER_DEMO.md`](docs/INGESTOR_GEYSER_DEMO.md) or run
+   [`docs-archive/INGESTOR_GEYSER_DEMO.md`](docs-archive/INGESTOR_GEYSER_DEMO.md) or run
    `make demo.geyser` with `GEYSER_ENDPOINT`/`GEYSER_API_KEY` set.
 
    To enable Helius fallback, export `ENABLE_HELIUS_FALLBACK=1` and provide
@@ -82,4 +82,4 @@ flake.nix & default.nix    Nix development shells
 3. **Flip read-paths** – downstream services consume `dex.sol.*` or GraphQL API.
 4. **Retire legacy** – stop Rust binary, remove bridge after one-week soak.
 
-See `docs/SPEC.md` for the canonical specification and `docs/CUTOVER.md` for the detailed playbook.
+See `docs-archive/SPEC.md` for the canonical specification and `docs-archive/CUTOVER.md` for the detailed playbook.
