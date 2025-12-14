@@ -1,0 +1,35 @@
+---
+title: Pipeline architecture
+---
+
+This page describes how data moves through the system from ingestion to serving.
+
+## 1) Ingest
+
+Ingestors connect to chain data sources (e.g., Geyser), filter relevant programs/accounts, and emit raw updates.
+
+Entry points live under `cmd/ingestor/*`.
+
+## 2) Decode
+
+Decoders translate program-specific data (instruction bytes, account state) into canonical events.
+
+Decoder implementations live under `decoder/`.
+
+## 3) Publish
+
+Canonical events are published to JetStream subjects under a common subject root (default: `dex.sol`).
+
+Message IDs should be deterministic so consumers can dedupe when replaying or backfilling.
+
+## 4) Sink
+
+Sink services consume JetStream events and persist them:
+
+- ClickHouse tables (`cmd/sink/clickhouse`, code in `sinks/clickhouse/`)
+- Parquet batches (`cmd/sink/parquet`, code in `sinks/parquet/`)
+
+## 5) Serve
+
+Serving components (HTTP APIs, caches, dashboards) read from persisted state.
+

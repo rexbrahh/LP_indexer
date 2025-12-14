@@ -1,0 +1,41 @@
+---
+title: Repository tour
+---
+
+This page is a map of the repo for engineers who want to orient quickly.
+
+## Runtime flow
+
+The runtime services follow the ingest → decode → publish → serve flow.
+
+The high-level module organization is captured in `AGENTS.md`:
+
+```md title="AGENTS.md (project structure)" file=<rootDir>/AGENTS.md#L1-L5 showLineNumbers
+```
+
+Key directories:
+
+- `cmd/` – binaries (entrypoints).
+- `ingestor/` – ingestion plumbing + the boundary where “raw chain data” becomes “decoder input.”
+- `decoder/` – program-specific decoders (Raydium, Orca Whirlpools, Meteora…).
+- `sinks/` – persistence consumers (ClickHouse, Parquet, NATS helpers).
+- `api/` – serving layer (HTTP handlers, caching).
+- `bridge/` – compatibility bridge for legacy subject/schema consumers.
+- `backfill/` – orchestrated historical backfill tooling.
+
+Supporting directories:
+
+- `proto/` – protobuf definitions (source of truth).
+- `gen/` – generated code (do not edit by hand).
+- `ops/` – operational configs: ClickHouse schemas, JetStream configs, subject maps.
+- `scripts/` – automation and harnesses.
+- `observability/` – dashboards/telemetry artifacts.
+- `state/` – long-running analytics engines (C++ codebases).
+
+## Read order (suggested)
+
+1. `README.md` (how to run + high-level goals)
+2. `cmd/ingestor/geyser/main.go` (how events enter the system)
+3. `ingestor/` package(s) used by the ingestor
+4. `decoder/` packages (program-specific decoding)
+5. `sinks/` packages (persistence and batching)

@@ -1,0 +1,32 @@
+---
+title: "Service: sinks"
+---
+
+Sinks consume canonical JetStream events and persist them to storage backends.
+
+## Entrypoints
+
+- `cmd/sink/clickhouse/main.go`
+- `cmd/sink/parquet/main.go`
+  - Note: the ClickHouse sink currently consumes swap/trade subjects; candle materialization is handled by `cmd/candles`.
+
+## Entrypoints (wiring)
+
+Both sink binaries follow the same structure:
+
+1. Load a service config from environment variables.
+2. Construct a long-running service object.
+3. Install SIGINT/SIGTERM handling to cancel the context.
+4. Call `Run(ctx)` and exit on error.
+
+```go title="cmd/sink/clickhouse/main.go" file=<rootDir>/cmd/sink/clickhouse/main.go showLineNumbers
+```
+
+```go title="cmd/sink/parquet/main.go" file=<rootDir>/cmd/sink/parquet/main.go showLineNumbers
+```
+
+## Validation harness
+
+```bash
+make sink-e2e
+```

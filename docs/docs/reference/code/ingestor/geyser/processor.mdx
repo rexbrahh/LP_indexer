@@ -1,0 +1,264 @@
+---
+title: "ingestor/geyser/processor.go"
+---
+
+This page is an **annotated source reference**. Code blocks are imported from the repository at build time.
+
+## What this file is
+
+_TODO: one-paragraph summary of responsibility and boundaries._
+
+## Why this file exists
+
+_TODO: architectural motivation and why this logic lives here (vs elsewhere)._ 
+
+## Full source
+
+```go title="ingestor/geyser/processor.go" file=<rootDir>/ingestor/geyser/processor.go showLineNumbers
+```
+
+## Walkthrough (by declaration)
+
+### package geyser
+
+```go title="package geyser" file=<rootDir>/ingestor/geyser/processor.go#L1-L1 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### imports
+
+```go title="imports" file=<rootDir>/ingestor/geyser/processor.go#L3-L21 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### const (chainIDSolana)
+
+**Symbols:** chainIDSolana
+
+```go title="const (chainIDSolana)" file=<rootDir>/ingestor/geyser/processor.go#L23-L23 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### type (SwapPublisher)
+
+**Symbols:** SwapPublisher
+
+```go title="type (SwapPublisher)" file=<rootDir>/ingestor/geyser/processor.go#L25-L30 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### type (Processor)
+
+**Symbols:** Processor
+
+```go title="type (Processor)" file=<rootDir>/ingestor/geyser/processor.go#L32-L39 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### func NewProcessor
+
+**Symbols:** NewProcessor
+
+```go title="func NewProcessor" file=<rootDir>/ingestor/geyser/processor.go#L41-L50 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### func (*Processor) HandleUpdate
+
+**Symbols:** HandleUpdate
+
+```go title="func (*Processor) HandleUpdate" file=<rootDir>/ingestor/geyser/processor.go#L52-L69 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### func (*Processor) handleTransaction
+
+**Symbols:** handleTransaction
+
+```go title="func (*Processor) handleTransaction" file=<rootDir>/ingestor/geyser/processor.go#L71-L100 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### func (*Processor) handleBlockMeta
+
+**Symbols:** handleBlockMeta
+
+```go title="func (*Processor) handleBlockMeta" file=<rootDir>/ingestor/geyser/processor.go#L102-L118 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### func (*Processor) handleAccount
+
+**Symbols:** handleAccount
+
+```go title="func (*Processor) handleAccount" file=<rootDir>/ingestor/geyser/processor.go#L120-L122 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### func (*Processor) handleSlot
+
+**Symbols:** handleSlot
+
+```go title="func (*Processor) handleSlot" file=<rootDir>/ingestor/geyser/processor.go#L124-L143 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### func (*Processor) finalizeSlot
+
+**Symbols:** finalizeSlot
+
+```go title="func (*Processor) finalizeSlot" file=<rootDir>/ingestor/geyser/processor.go#L145-L162 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### func (*Processor) undoSlot
+
+**Symbols:** undoSlot
+
+```go title="func (*Processor) undoSlot" file=<rootDir>/ingestor/geyser/processor.go#L164-L181 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### func (*Processor) publishBlockHeadStatus
+
+**Symbols:** publishBlockHeadStatus
+
+```go title="func (*Processor) publishBlockHeadStatus" file=<rootDir>/ingestor/geyser/processor.go#L183-L198 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### func (*Processor) appendPending
+
+**Symbols:** appendPending
+
+```go title="func (*Processor) appendPending" file=<rootDir>/ingestor/geyser/processor.go#L200-L206 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### type (processorMetrics)
+
+**Symbols:** processorMetrics
+
+```go title="type (processorMetrics)" file=<rootDir>/ingestor/geyser/processor.go#L208-L215 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### func newProcessorMetrics
+
+**Symbols:** newProcessorMetrics
+
+```go title="func newProcessorMetrics" file=<rootDir>/ingestor/geyser/processor.go#L217-L259 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### func (*processorMetrics) recordSwap
+
+**Symbols:** recordSwap
+
+```go title="func (*processorMetrics) recordSwap" file=<rootDir>/ingestor/geyser/processor.go#L261-L275 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### func (*processorMetrics) recordError
+
+**Symbols:** recordError
+
+```go title="func (*processorMetrics) recordError" file=<rootDir>/ingestor/geyser/processor.go#L277-L291 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+

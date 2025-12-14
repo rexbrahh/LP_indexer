@@ -1,0 +1,20 @@
+---
+title: "Service: bridge"
+---
+
+The bridge exists to keep legacy consumers working while the new pipeline is rolled out.
+
+## Entrypoint
+
+- `cmd/bridge/main.go`
+
+## Entrypoint (wiring)
+
+The bridge binary is thin glue around the `bridge` package:
+
+```go title="cmd/bridge/main.go" file=<rootDir>/cmd/bridge/main.go showLineNumbers
+```
+
+## When to use
+
+- During cutover phases where downstream still reads legacy subjects/schemas.

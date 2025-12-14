@@ -1,0 +1,24 @@
+---
+title: Local development ops
+---
+
+## Start/stop dependencies
+
+```bash
+make up
+make down
+```
+
+## Seed JetStream
+
+```bash
+make ops.jetstream.init
+```
+
+## Run E2E harnesses
+
+```bash
+make sink-e2e
+make candle-e2e
+```
+

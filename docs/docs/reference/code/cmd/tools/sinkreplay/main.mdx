@@ -1,0 +1,161 @@
+---
+title: "cmd/tools/sinkreplay/main.go"
+---
+
+This page is an **annotated source reference**. Code blocks are imported from the repository at build time.
+
+## What this file is
+
+`cmd/tools/sinkreplay/main.go` is a CLI tool that **replays a JSON fixture** into NATS JetStream using the repo’s protobuf event schema.
+
+It is designed for deterministic, repeatable testing of sinks (ClickHouse/Parquet) without needing a live chain connection.
+
+## Why this file exists
+
+The sinks are consumers: they require a JetStream stream with canonical events. This tool creates those events from a fixture file so we can:
+
+- run end-to-end tests locally (`make sink-e2e`)
+- reproduce bugs from known payloads
+- validate schema/subject/message-id conventions without Geyser/RPC dependencies
+
+## Full source
+
+```go title="cmd/tools/sinkreplay/main.go" file=<rootDir>/cmd/tools/sinkreplay/main.go showLineNumbers
+```
+
+## Walkthrough (by declaration)
+
+### package main
+
+```go title="package main" file=<rootDir>/cmd/tools/sinkreplay/main.go#L1-L1 showLineNumbers
+```
+
+**What:** Declares an executable that can be run via `go run ./cmd/tools/sinkreplay ...`.
+
+**How:** The `main()` function reads a JSON fixture and publishes each event to JetStream.
+
+**Why:** Keeping replay logic in its own tool makes sink validation scripts simple and deterministic.
+
+### imports
+
+```go title="imports" file=<rootDir>/cmd/tools/sinkreplay/main.go#L3-L17 showLineNumbers
+```
+
+**What:** Standard CLI utilities + NATS client + protobuf marshalling.
+
+**How:**
+
+- `encoding/json` parses the fixture file into a Go struct.
+- `github.com/nats-io/nats.go` provides NATS + JetStream publishing APIs.
+- `google.golang.org/protobuf/proto` marshals Go structs into protobuf bytes.
+- `gen/go/dex/sol/v1` contains generated message types (from `proto/`).
+
+**Why:** The sinks expect protobuf-encoded messages and certain subject/message-id conventions; this tool mimics a real producer.
+
+### type (event)
+
+**Symbols:** event
+
+```go title="type (event)" file=<rootDir>/cmd/tools/sinkreplay/main.go#L19-L56 showLineNumbers
+```
+
+**What:** `event` is the JSON fixture schema: a superset of fields used by different event types (`block_head`, `tx_meta`, `swap`, `candle`).
+
+**How:** A fixture is an array of these objects. Fields are grouped by use:
+
+- common routing: `Type`, `Slot`, `ChainID`
+- block/tx metadata: `Timestamp`, `Status`, `Signature`, `Success`, `LogMsgs`
+- swap fields: program/pool/mints, decimals, amounts, reserves, flags
+- candle fields: scope keys + OHLCV + flags
+- replay pacing: `SleepMillis` (per-event delay override)
+
+Pointer fields like `Provisional`, `IsCorrection`, and `Success` allow the fixture to distinguish:
+
+- “explicitly set to false” vs “omitted, use default”
+
+**Why:** Using a fixture struct decouples sink testing from upstream ingestion/decoding and makes it easy to craft focused scenarios (undo, provisional→final, corrections).
+
+### func main()
+
+**Symbols:** main
+
+```go title="func main()" file=<rootDir>/cmd/tools/sinkreplay/main.go#L58-L106 showLineNumbers
+```
+
+**What:** Loads a fixture file, connects to JetStream, and publishes each event sequentially (optionally sleeping between events).
+
+**How:** High-level flow:
+
+1. Parse flags (`--input`, `--nats-url`, `--subject-root`, `--delay-ms`).
+2. Read and JSON-decode `[]event`.
+3. Connect to NATS and obtain a JetStream context.
+4. Publish each event via `publishEvent(...)` with a global timeout.
+
+This is what the sink E2E harness uses:
+
+```bash title="scripts/run_sink_e2e.sh (invocation excerpt)" file=<rootDir>/scripts/run_sink_e2e.sh#L108-L116 showLineNumbers
+```
+
+**Why:** Sequential publishing with deterministic message IDs makes test runs reproducible and makes sink behavior debuggable (one event in, one write out).
+
+### func publishEvent(ctx context.Context, js nats.JetStreamContext, root string, ev event) error
+
+**Symbols:** publishEvent
+
+```go title="func publishEvent(ctx context.Context, js nats.JetStreamContext, root string, ev event) error" file=<rootDir>/cmd/tools/sinkreplay/main.go#L108-L227 showLineNumbers
+```
+
+**What:** Translates one JSON fixture `event` into a concrete protobuf message and publishes it to the appropriate subject with a deterministic message ID.
+
+**How:**
+
+- `chainID` defaults to `501` (Solana) when omitted.
+- `ev.Type` selects which protobuf message to build:
+  - `block_head` → `dexv1.BlockHead` on `<root>.blocks.head`
+  - `tx_meta` → `dexv1.TxMeta` on `<root>.tx.meta`
+  - `swap` → `dexv1.SwapEvent` on `<root>.<program>.swap`
+  - `candle` → `dexv1.Candle` on `<root>.candle.<scope>.<timeframe>`
+- message IDs are designed to be stable keys so JetStream can dedupe replays.
+
+Example: candle routing and ID construction:
+
+```go title="Candle subject + deterministic Nats-Msg-Id" file=<rootDir>/cmd/tools/sinkreplay/main.go#L162-L226 showLineNumbers
+```
+
+**Why:** Sinks and backfills rely on idempotency: if you replay the same fixture, you should not create duplicate logical rows. Deterministic message IDs are the first line of defense.
+
+### func programSegment(programID string) string
+
+**Symbols:** programSegment
+
+```go title="func programSegment(programID string) string" file=<rootDir>/cmd/tools/sinkreplay/main.go#L229-L247 showLineNumbers
+```
+
+**What:** Maps a Solana program ID to a stable subject segment (e.g. `raydium`, `orca`, `meteora`).
+
+**How:** Known program IDs are mapped to human-readable segments; unknown IDs fall back to a truncated prefix to avoid extremely long subjects.
+
+**Why:** Subject segmentation is used by consumers (and humans) to filter per-DEX traffic; stable segments improve ergonomics and keep subjects manageable.
+
+### func publishProto(ctx context.Context, js nats.JetStreamContext, subject string, data []byte, msgID string) error
+
+**Symbols:** publishProto
+
+```go title="func publishProto(ctx context.Context, js nats.JetStreamContext, subject string, data []byte, msgID string) error" file=<rootDir>/cmd/tools/sinkreplay/main.go#L249-L268 showLineNumbers
+```
+
+**What:** Low-level JetStream publish helper that sets headers and waits for server acknowledgment.
+
+**How:**
+
+- Builds a `nats.Msg` and sets:
+  - `Nats-Msg-Id` for dedupe (when provided)
+  - `Content-Type: application/protobuf` to signal payload format
+- Publishes asynchronously and then blocks until:
+  - JetStream signals publish completion
+  - the provided context is cancelled
+  - a 3s timeout elapses
+
+This “publish then wait” pattern keeps the replay deterministic and surfaces publish errors early.
+
+**Why:** In test harnesses, it’s better to fail fast on publish problems (bad subjects, disconnected server, stream missing) than to enqueue a bunch of events and discover later that none were written.

@@ -1,0 +1,36 @@
+---
+title: Storage (ClickHouse + Parquet)
+---
+
+This repo ships two primary persistence sinks: ClickHouse and Parquet.
+
+## ClickHouse
+
+ClickHouse is used for query-heavy workloads and near-real-time analytics.
+
+- Schemas live in `ops/clickhouse/`
+- Sink service entrypoint: `cmd/sink/clickhouse/main.go`
+- Writer implementation: `sinks/clickhouse/`
+
+The core table schemas are committed in `ops/clickhouse/all.sql`:
+
+```sql title="ops/clickhouse/all.sql (trades + candles excerpt)" file=<rootDir>/ops/clickhouse/all.sql#L1-L83 showLineNumbers
+```
+
+### Current implementation note
+
+- The ClickHouse sink service currently materializes swap/trade events into the `trades` table.
+- Candle materialization is currently handled by the separate `cmd/candles` bridge (table name defaults to `candles`), while the `ohlcv_*` schemas in `ops/clickhouse/` represent the target analytics schema family.
+
+## Parquet
+
+Parquet is used for batch export / data lake compatible workflows.
+
+- Sink service entrypoint: `cmd/sink/parquet/main.go`
+- Writer implementation: `sinks/parquet/`
+
+## End-to-end validation
+
+```bash
+make sink-e2e
+```

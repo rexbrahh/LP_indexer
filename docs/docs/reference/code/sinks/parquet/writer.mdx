@@ -1,0 +1,212 @@
+---
+title: "sinks/parquet/writer.go"
+---
+
+This page is an **annotated source reference**. Code blocks are imported from the repository at build time.
+
+## What this file is
+
+_TODO: one-paragraph summary of responsibility and boundaries._
+
+## Why this file exists
+
+_TODO: architectural motivation and why this logic lives here (vs elsewhere)._ 
+
+## Full source
+
+```go title="sinks/parquet/writer.go" file=<rootDir>/sinks/parquet/writer.go showLineNumbers
+```
+
+## Walkthrough (by declaration)
+
+### package parquet
+
+```go title="package parquet" file=<rootDir>/sinks/parquet/writer.go#L1-L1 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### imports
+
+```go title="imports" file=<rootDir>/sinks/parquet/writer.go#L3-L21 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### var (ErrWriterDisabled)
+
+**Symbols:** ErrWriterDisabled
+
+```go title="var (ErrWriterDisabled)" file=<rootDir>/sinks/parquet/writer.go#L23-L23 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### type (Writer)
+
+**Symbols:** Writer
+
+```go title="type (Writer)" file=<rootDir>/sinks/parquet/writer.go#L25-L33 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### type (candleRow)
+
+**Symbols:** candleRow
+
+```go title="type (candleRow)" file=<rootDir>/sinks/parquet/writer.go#L35-L53 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### func NewWriter
+
+**Symbols:** NewWriter
+
+```go title="func NewWriter" file=<rootDir>/sinks/parquet/writer.go#L55-L82 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### func (*Writer) AppendSwap
+
+**Symbols:** AppendSwap
+
+```go title="func (*Writer) AppendSwap" file=<rootDir>/sinks/parquet/writer.go#L84-L88 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### func (*Writer) AppendCandle
+
+**Symbols:** AppendCandle
+
+```go title="func (*Writer) AppendCandle" file=<rootDir>/sinks/parquet/writer.go#L90-L140 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### func (*Writer) Flush
+
+**Symbols:** Flush
+
+```go title="func (*Writer) Flush" file=<rootDir>/sinks/parquet/writer.go#L142-L146 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### func (*Writer) Close
+
+**Symbols:** Close
+
+```go title="func (*Writer) Close" file=<rootDir>/sinks/parquet/writer.go#L148-L150 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### func (*Writer) flushLocked
+
+**Symbols:** flushLocked
+
+```go title="func (*Writer) flushLocked" file=<rootDir>/sinks/parquet/writer.go#L152-L169 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### func (*Writer) writeBucket
+
+**Symbols:** writeBucket
+
+```go title="func (*Writer) writeBucket" file=<rootDir>/sinks/parquet/writer.go#L171-L194 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### func (*Writer) objectKey
+
+**Symbols:** objectKey
+
+```go title="func (*Writer) objectKey" file=<rootDir>/sinks/parquet/writer.go#L196-L201 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### func bucketKey
+
+**Symbols:** bucketKey
+
+```go title="func bucketKey" file=<rootDir>/sinks/parquet/writer.go#L203-L205 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### func splitBucketKey
+
+**Symbols:** splitBucketKey
+
+```go title="func splitBucketKey" file=<rootDir>/sinks/parquet/writer.go#L207-L213 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+

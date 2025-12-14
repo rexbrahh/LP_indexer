@@ -1,0 +1,30 @@
+---
+title: Glossary
+---
+
+## Core runtime terms
+
+**Chain**: a blockchain network. Most of the repo targets Solana (often `chain_id = 501`).
+
+**Slot**: Solana’s monotonically increasing block height concept; used as the primary ordering axis.
+
+**Signature (`sig`)**: transaction signature (hash) used to identify a Solana transaction.
+
+**Program**: Solana program ID (smart contract). Decoders are program-specific.
+
+**Pool**: DEX liquidity pool identifier (often a Solana account address).
+
+**Provisional**: a flag indicating an event is produced before finality (useful for low-latency consumers). Some sinks may treat provisional data differently.
+
+**Undo (`is_undo`)**: a compensating event indicating the earlier effect should be reverted.
+
+**Candle**: aggregated OHLCV for a pair or pool over a timeframe (e.g. `1s`, `1m`), keyed by `window_start`.
+
+## Infrastructure
+
+**NATS JetStream**: the persistent message bus used for publishing canonical events and consuming them in sinks.
+
+**ClickHouse**: column store used for high-throughput analytics tables.
+
+**Parquet**: columnar file format used for batch export / data lake workflows.
+

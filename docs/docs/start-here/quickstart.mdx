@@ -1,0 +1,94 @@
+---
+title: Quickstart (local dev)
+---
+
+This guide gets you from zero to “I can run the local pipeline and validate output.”
+
+## Prerequisites
+
+- Docker (for local NATS + ClickHouse via `make up`)
+- Go (recommended: `nix develop` provides Go 1.22)
+- `nats` CLI (required by `make ops.jetstream.init`)
+- For `make sink-e2e`: `clickhouse-client`, `aws` CLI, and `duckdb` CLI
+
+## Step 1: enter the dev shell
+
+```bash
+nix develop
+```
+
+If you don’t use Nix, you can still work with system Go, but you’ll need your own toolchain management for generator CLIs.
+
+## Step 2: start infra (NATS + ClickHouse)
+
+```bash
+make up
+```
+
+This uses `docker-compose.yml` in the repo root.
+
+Under the hood, `make up` is just a thin wrapper over Docker Compose:
+
+```makefile title="Makefile: local infra + JetStream bootstrap" file=<rootDir>/Makefile#L115-L162 showLineNumbers
+```
+
+## Step 3: initialize JetStream
+
+```bash
+make ops.jetstream.init
+```
+
+This creates the `DEX` stream and a default consumer using JSON configs in `ops/jetstream/`.
+
+The exact stream definition is committed in-repo:
+
+```json title="ops/jetstream/streams.dex.json" file=<rootDir>/ops/jetstream/streams.dex.json showLineNumbers
+```
+
+## Step 4: run a service
+
+Example: start the Geyser ingestor:
+
+```bash
+make run.ingestor.geyser
+```
+
+In another terminal, start sinks:
+
+```bash
+go run ./cmd/sink/clickhouse
+go run ./cmd/sink/parquet
+```
+
+## Step 5: run the end-to-end harness (recommended)
+
+Use the sink E2E harness (writes sample events → validates ClickHouse rows → validates Parquet output):
+
+```bash
+make sink-e2e
+```
+
+The harness does three things:
+
+1. Boots sinks against your local infra.
+2. Replays a deterministic fixture into JetStream.
+3. Validates ClickHouse + Parquet output matches the fixture.
+
+```bash title="scripts/run_sink_e2e.sh (setup + replay)" file=<rootDir>/scripts/run_sink_e2e.sh#L1-L116 showLineNumbers
+```
+
+The default replay fixture is `fixtures/sink_sample.json`:
+
+```json title="fixtures/sink_sample.json (excerpt)" file=<rootDir>/fixtures/sink_sample.json#L1-L120 showLineNumbers
+```
+
+If you’re iterating on candle logic specifically:
+
+```bash
+make candle-e2e
+```
+
+## Troubleshooting
+
+- If `make ops.jetstream.init` fails, verify the `nats` CLI is installed and `NATS_URL` is reachable.
+- If ClickHouse queries fail, confirm `make up` succeeded and the ClickHouse port is reachable.

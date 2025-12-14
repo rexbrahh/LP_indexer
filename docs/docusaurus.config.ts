@@ -1,6 +1,8 @@
 import {themes as prismThemes} from 'prism-react-renderer';
 import type {Config} from '@docusaurus/types';
 import type * as Preset from '@docusaurus/preset-classic';
+import codeImport from 'remark-code-import';
+import path from 'path';
 
 // This runs in Node.js - Don't use client-side code here (browser APIs, JSX...)
 
@@ -42,6 +44,16 @@ const config: Config = {
         docs: {
           routeBasePath: 'docs',
           sidebarPath: './sidebars.ts',
+          remarkPlugins: [
+            [
+              codeImport,
+              {
+                // Treat the git repo root as <rootDir> so docs can import code via:
+                // ```go file=<rootDir>/cmd/...
+                rootDir: path.resolve(process.cwd(), '..'),
+              },
+            ],
+          ],
           editUrl:
             'https://github.com/rexbrahh/LP_indexer/tree/main/docs/',
         },
@@ -68,7 +80,7 @@ const config: Config = {
       items: [
         {
           type: 'docSidebar',
-          sidebarId: 'tutorialSidebar',
+          sidebarId: 'mainSidebar',
           position: 'left',
           label: 'Docs',
         },
@@ -87,7 +99,7 @@ const config: Config = {
           items: [
             {
               label: 'Docs',
-              to: '/docs/intro',
+              to: '/docs',
             },
           ],
         },

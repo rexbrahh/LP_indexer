@@ -1,0 +1,342 @@
+---
+title: "bridge/service.go"
+---
+
+This page is an **annotated source reference**. Code blocks are imported from the repository at build time.
+
+## What this file is
+
+_TODO: one-paragraph summary of responsibility and boundaries._
+
+## Why this file exists
+
+_TODO: architectural motivation and why this logic lives here (vs elsewhere)._ 
+
+## Full source
+
+```go title="bridge/service.go" file=<rootDir>/bridge/service.go showLineNumbers
+```
+
+## Walkthrough (by declaration)
+
+### package bridge
+
+```go title="package bridge" file=<rootDir>/bridge/service.go#L1-L1 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### imports
+
+```go title="imports" file=<rootDir>/bridge/service.go#L3-L18 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### type (SubjectMapper)
+
+**Symbols:** SubjectMapper
+
+```go title="type (SubjectMapper)" file=<rootDir>/bridge/service.go#L20-L23 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### type (Option)
+
+**Symbols:** Option
+
+```go title="type (Option)" file=<rootDir>/bridge/service.go#L25-L26 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### const (defaultFetchBatch, defaultFetchWait, defaultPublishTimeout)
+
+**Symbols:** defaultFetchBatch, defaultFetchWait, defaultPublishTimeout
+
+```go title="const (defaultFetchBatch, defaultFetchWait, defaultPublishTimeout)" file=<rootDir>/bridge/service.go#L28-L32 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### type (Service)
+
+**Symbols:** Service
+
+```go title="type (Service)" file=<rootDir>/bridge/service.go#L34-L44 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### func New
+
+**Symbols:** New
+
+```go title="func New" file=<rootDir>/bridge/service.go#L46-L89 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### func WithSubjectMapper
+
+**Symbols:** WithSubjectMapper
+
+```go title="func WithSubjectMapper" file=<rootDir>/bridge/service.go#L91-L99 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### func WithMetricsRegisterer
+
+**Symbols:** WithMetricsRegisterer
+
+```go title="func WithMetricsRegisterer" file=<rootDir>/bridge/service.go#L101-L108 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### func WithMetricsServer
+
+**Symbols:** WithMetricsServer
+
+```go title="func WithMetricsServer" file=<rootDir>/bridge/service.go#L110-L117 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### func (*Service) Run
+
+**Symbols:** Run
+
+```go title="func (*Service) Run" file=<rootDir>/bridge/service.go#L119-L202 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### func (*Service) Config
+
+**Symbols:** Config
+
+```go title="func (*Service) Config" file=<rootDir>/bridge/service.go#L204-L207 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### func (*Service) consumeLoop
+
+**Symbols:** consumeLoop
+
+```go title="func (*Service) consumeLoop" file=<rootDir>/bridge/service.go#L209-L232 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### func (*Service) forward
+
+**Symbols:** forward
+
+```go title="func (*Service) forward" file=<rootDir>/bridge/service.go#L234-L281 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### func (*Service) publishContext
+
+**Symbols:** publishContext
+
+```go title="func (*Service) publishContext" file=<rootDir>/bridge/service.go#L283-L288 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### func collectSubjects
+
+**Symbols:** collectSubjects
+
+```go title="func collectSubjects" file=<rootDir>/bridge/service.go#L290-L298 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### func defaultSubjectMapper
+
+**Symbols:** defaultSubjectMapper
+
+```go title="func defaultSubjectMapper" file=<rootDir>/bridge/service.go#L300-L302 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### func durableName
+
+**Symbols:** durableName
+
+```go title="func durableName" file=<rootDir>/bridge/service.go#L304-L321 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### func cloneHeader
+
+**Symbols:** cloneHeader
+
+```go title="func cloneHeader" file=<rootDir>/bridge/service.go#L323-L334 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### type (serviceMetrics)
+
+**Symbols:** serviceMetrics
+
+```go title="type (serviceMetrics)" file=<rootDir>/bridge/service.go#L336-L342 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### func newServiceMetrics
+
+**Symbols:** newServiceMetrics
+
+```go title="func newServiceMetrics" file=<rootDir>/bridge/service.go#L344-L400 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### func (*serviceMetrics) incForwarded
+
+**Symbols:** incForwarded
+
+```go title="func (*serviceMetrics) incForwarded" file=<rootDir>/bridge/service.go#L402-L404 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### func (*serviceMetrics) incDropped
+
+**Symbols:** incDropped
+
+```go title="func (*serviceMetrics) incDropped" file=<rootDir>/bridge/service.go#L406-L408 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### func (*serviceMetrics) incPublishError
+
+**Symbols:** incPublishError
+
+```go title="func (*serviceMetrics) incPublishError" file=<rootDir>/bridge/service.go#L410-L412 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### func (*serviceMetrics) observeLag
+
+**Symbols:** observeLag
+
+```go title="func (*serviceMetrics) observeLag" file=<rootDir>/bridge/service.go#L414-L416 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+

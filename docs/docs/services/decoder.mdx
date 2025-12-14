@@ -1,0 +1,16 @@
+---
+title: "Service: decoder"
+---
+
+Decoders translate program-specific transactions and account updates into canonical events.
+
+## Where code lives
+
+- `decoder/` – DEX-specific logic and helpers
+- `ingestor/decoder/` – integration boundary between ingestor updates and decoder output
+
+## Primary responsibilities
+
+- Interpret instruction data.
+- Track pool metadata needed for decoding.
+- Emit canonical swap events (and any higher-order derived data).

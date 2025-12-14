@@ -1,0 +1,22 @@
+---
+title: ClickHouse operations
+---
+
+## Apply schemas
+
+```bash
+make ops.clickhouse.apply
+```
+
+Schemas live in `ops/clickhouse/`.
+
+Current note:
+
+- `trades` is actively written by `cmd/sink/clickhouse`.
+- `ohlcv_*` schemas are the intended candle analytics tables; candle materialization currently lives in `cmd/candles` and may require schema alignment depending on your deployment.
+
+## E2E validation
+
+```bash
+make sink-e2e
+```

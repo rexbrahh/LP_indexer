@@ -1,0 +1,42 @@
+---
+title: Canonical event model
+---
+
+The pipeline normalizes different DEX program activity into a stable set of canonical events.
+
+## Source of truth: protobuf schema
+
+The canonical event schema is defined in `proto/` and generates Go/C++ bindings into `gen/`.
+
+```proto title="proto/dex/sol/v1/core.proto (canonical messages)" file=<rootDir>/proto/dex/sol/v1/core.proto#L7-L83 showLineNumbers
+```
+
+## Swap events
+
+A swap event typically contains:
+
+- `chain_id`, `slot`, `sig`, `idx` (identity / ordering)
+- `program_id`, `pool_id` (DEX routing)
+- base/quote mints + decimals
+- in/out amounts and reserves
+- flags: `provisional`, `is_undo`
+
+### How to interpret key fields
+
+- `slot` + `sig` + `index` form a stable identity for “one swap event within one transaction”.
+- `dec_base` / `dec_quote` are required so consumers can normalize raw integer amounts into human units.
+- `provisional` exists to support low-latency consumers; downstream may choose to ignore provisional rows, merge them, or treat them as “preview”.
+- `is_undo` is a compensating event: consumers should treat it as reverting the effect of an earlier swap (same identity or same logical key, depending on sink semantics).
+
+## Candle events
+
+Candles represent OHLCV aggregations for a **pair** or **pool** over a timeframe:
+
+- identity: `chain_id`, `pair_id` or `pool_id`, `timeframe`, `window_start`
+- pricing: `open`, `high`, `low`, `close`
+- totals: volume + trades
+- flags: `provisional`, `is_correction`
+
+## Provisional vs finalized
+
+Some parts of the pipeline emit provisional data for low latency and later emit a “finalized” version. Sinks and consumers must define how they reconcile these states.

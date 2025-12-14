@@ -1,0 +1,93 @@
+---
+title: "cmd/ingestor/geyser-demo/main.go"
+---
+
+This page is an **annotated source reference**. Code blocks are imported from the repository at build time.
+
+## What this file is
+
+`cmd/ingestor/geyser-demo/main.go` is a **human-oriented streaming demo**. It connects to a configured Geyser endpoint and prints a small set of update types (slots, accounts, block metadata) to stdout.
+
+Unlike the real ingestor (`cmd/ingestor/geyser`), this demo does not publish to JetStream or run decoders/sinks—it’s a connectivity + filtering smoke test.
+
+## Why this file exists
+
+When onboarding or debugging, it’s useful to have a “minimal moving parts” path:
+
+- prove credentials/endpoints are correct
+- prove the underlying gRPC stream is healthy
+- observe raw update volume and shapes before wiring decoders/sinks
+
+This binary provides that path with minimal configuration and verbose logging.
+
+## Full source
+
+```go title="cmd/ingestor/geyser-demo/main.go" file=<rootDir>/cmd/ingestor/geyser-demo/main.go showLineNumbers
+```
+
+## Walkthrough (by declaration)
+
+### package main
+
+```go title="package main" file=<rootDir>/cmd/ingestor/geyser-demo/main.go#L1-L1 showLineNumbers
+```
+
+**What:** Declares a standalone executable.
+
+**How:** Run it via `make demo.geyser` (or `go run ./cmd/ingestor/geyser-demo`).
+
+**Why:** Keeping the demo in a separate binary avoids polluting the production ingestor with “print-only” code paths.
+
+### imports
+
+```go title="imports" file=<rootDir>/cmd/ingestor/geyser-demo/main.go#L3-L12 showLineNumbers
+```
+
+**What:** Standard logging/signal packages, plus the internal Geyser client and the protobuf types for updates.
+
+**How:**
+
+- `ingestor/geyser` provides `Config` validation and the streaming client implementation.
+- `pb` (Yellowstone gRPC protos) defines the `SubscribeUpdate_*` oneof types used in the update stream.
+
+**Why:** The demo needs to interpret the update oneof to print meaningful per-update logs.
+
+### func main()
+
+**Symbols:** main
+
+```go title="func main()" file=<rootDir>/cmd/ingestor/geyser-demo/main.go#L14-L106 showLineNumbers
+```
+
+**What:** Builds a small `geyser.Config`, connects, subscribes, and logs updates until terminated.
+
+**How:** The main loop is intentionally straightforward:
+
+1. Construct `geyser.Config` from env vars and hardcoded program IDs.
+2. Validate config, connect a client, and subscribe from slot `0` (start from “latest”).
+3. `select` over:
+   - update channel: log interesting update types
+   - error channel: log and continue (client may reconnect)
+   - signal channel: exit cleanly
+
+The repo’s make target wires required env vars for this demo:
+
+```makefile title="Makefile: demo.geyser target" file=<rootDir>/Makefile#L208-L212 showLineNumbers
+```
+
+Note: as of this version, program filters are hardcoded in the demo source (not loaded from `ops/programs.yaml`).
+
+**Why:** This is a fast “does the stream work?” check that avoids JetStream, ClickHouse, and decoder dependencies.
+
+### func truncateBase58(pubkey []byte) string
+
+**Symbols:** truncateBase58
+
+```go title="func truncateBase58(pubkey []byte) string" file=<rootDir>/cmd/ingestor/geyser-demo/main.go#L108-L119 showLineNumbers
+```
+
+**What:** Produces a short identifier string for logging byte-slice keys (pubkeys/owners).
+
+**How:** The function formats the raw bytes as hex and truncates to a `prefix...suffix` form for readability.
+
+**Why:** Full keys are long and noisy in logs; truncation keeps demo output scan-friendly while still allowing humans to correlate updates.

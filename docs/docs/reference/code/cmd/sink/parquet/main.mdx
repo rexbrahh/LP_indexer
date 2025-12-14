@@ -1,0 +1,72 @@
+---
+title: "cmd/sink/parquet/main.go"
+---
+
+This page is an **annotated source reference**. Code blocks are imported from the repository at build time.
+
+## What this file is
+
+`cmd/sink/parquet/main.go` is the **process entrypoint** for the Parquet sink service. It configures a JetStream consumer that batches canonical events into Parquet files (typically uploaded to an S3-compatible object store).
+
+## Why this file exists
+
+Like other binaries in this repo, this `main` keeps operational wiring separate from the sink implementation:
+
+- config and validation live in `sinks/parquet`
+- lifecycle is handled with a cancellable context and OS signal handling
+- the long-running loop is owned by the sink service, not by this entrypoint
+
+## Full source
+
+```go title="cmd/sink/parquet/main.go" file=<rootDir>/cmd/sink/parquet/main.go showLineNumbers
+```
+
+## Walkthrough (by declaration)
+
+### package main
+
+```go title="package main" file=<rootDir>/cmd/sink/parquet/main.go#L1-L1 showLineNumbers
+```
+
+**What:** Declares a binary entrypoint package.
+
+**How:** `go build` compiles this package (and its dependencies) into an executable.
+
+**Why:** Keeps the Parquet sink’s core logic in `sinks/parquet`, which is easier to test and reuse.
+
+### imports
+
+```go title="imports" file=<rootDir>/cmd/sink/parquet/main.go#L3-L11 showLineNumbers
+```
+
+**What:** Brings in the standard shutdown pattern and the Parquet sink package.
+
+**How:** `sinks/parquet` provides `ServiceConfigFromEnv()` and `NewService(...)`—the entrypoint delegates most work there.
+
+**Why:** The service needs deterministic shutdown and a single place to validate required env vars (S3 endpoint, bucket, credentials, etc.).
+
+### func main()
+
+**Symbols:** main
+
+```go title="func main()" file=<rootDir>/cmd/sink/parquet/main.go#L13-L40 showLineNumbers
+```
+
+**What:** Loads configuration, constructs the Parquet sink service, and runs it until shutdown.
+
+**How:** The structure mirrors the ClickHouse sink entrypoint:
+
+1. Create a logger.
+2. Load service config from env and validate it.
+3. Create a cancellable context.
+4. Build the sink service.
+5. Cancel on SIGINT/SIGTERM.
+6. Run; treat `context.Canceled` as clean shutdown.
+
+```go title="Config load + service init" file=<rootDir>/cmd/sink/parquet/main.go#L15-L27 showLineNumbers
+```
+
+```go title="Signal handling + Run()" file=<rootDir>/cmd/sink/parquet/main.go#L29-L39 showLineNumbers
+```
+
+**Why:** Parquet batching is sensitive to shutdown timing (flush intervals, in-flight uploads). Cooperative cancellation gives the service a chance to stop fetching and flush safely.

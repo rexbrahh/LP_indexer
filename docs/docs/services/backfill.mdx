@@ -1,0 +1,13 @@
+---
+title: "Service: backfill"
+---
+
+Backfill tooling replays historical data through the same canonical pipeline to populate sinks deterministically.
+
+## Where code lives
+
+- `backfill/` – orchestrator + helpers
+
+## Goal
+
+Reproduce the same persisted state you would get from live ingestion, with deterministic IDs and idempotent sinks.

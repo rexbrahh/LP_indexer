@@ -1,0 +1,238 @@
+---
+title: "cmd/candles/main.go"
+---
+
+This page is an **annotated source reference**. Code blocks are imported from the repository at build time.
+
+## What this file is
+
+`cmd/candles/main.go` is a long-running **candle bridge** process:
+
+- consumes protobuf `dexv1.Candle` messages from NATS JetStream
+- writes them into ClickHouse candle tables (via `sinks/clickhouse`)
+- optionally mirrors them into Parquet (via `sinks/parquet`)
+
+It is effectively a specialized sink focused on candle subjects (`dex.sol.candle.>` by default).
+
+Note: the ClickHouse destination table is configured via `CLICKHOUSE_CANDLES_TABLE` / `--clickhouse-candles` (default `"candles"`). The `ops/clickhouse/ohlcv_*` schemas are a separate (more canonical) candle schema family; this bridge currently writes the simplified `sinks/clickhouse.Candle` row type.
+
+## Why this file exists
+
+There are two distinct concerns in this system:
+
+1. **Producing candles** (aggregation logic, correction semantics, subject routing).
+2. **Persisting candles** reliably and in a query-friendly format.
+
+This binary focuses on (2). It allows the pipeline to publish candles into JetStream once and then have independent consumers materialize them into storage.
+
+It also provides a pragmatic migration path: if candle production changes, you can replay the candle stream and rebuild storage without re-running the whole swap ingestion path.
+
+In other words, this is a “materializer” for the candle stream; it is intentionally decoupled from the swap ingestion + aggregation logic.
+
+## Full source
+
+```go title="cmd/candles/main.go" file=<rootDir>/cmd/candles/main.go showLineNumbers
+```
+
+## Walkthrough (by declaration)
+
+### package main
+
+```go title="package main" file=<rootDir>/cmd/candles/main.go#L1-L1 showLineNumbers
+```
+
+**What:** Declares a standalone executable.
+
+**How:** The `main()` below parses config, connects to JetStream, and runs a fetch/process loop.
+
+**Why:** This is a deployable process that can be scaled/managed independently from other sinks.
+
+### imports
+
+```go title="imports" file=<rootDir>/cmd/candles/main.go#L3-L21 showLineNumbers
+```
+
+**What:** CLI parsing + lifecycle management + NATS + protobuf + sink packages.
+
+**How:**
+
+- `flag` + `envOr` helpers allow a “flags with env defaults” configuration style.
+- `nats.go` provides JetStream pull-consumer APIs.
+- `sinks/clickhouse` and `sinks/parquet` implement the actual persistence writers.
+- `dexv1` contains the generated protobuf candle type.
+
+**Why:** The bridge’s job is glue: read from JetStream, decode protobuf, translate to sink row formats, write and ACK.
+
+### func main()
+
+**Symbols:** main
+
+```go title="func main()" file=<rootDir>/cmd/candles/main.go#L23-L143 showLineNumbers
+```
+
+**What:** Configures and runs the candle bridge until shutdown.
+
+**How:** The implementation is a classic pull-consumer loop:
+
+1. Parse flags (with env-based defaults) for NATS + sink destinations.
+2. Connect to NATS and obtain a JetStream context.
+3. Create a durable pull subscription to the candle subject filter.
+4. Create sink writers (ClickHouse always; Parquet optional).
+5. Loop: `Fetch(batchSize, MaxWait)` then `bridge.Process(...)`.
+
+Key excerpts:
+
+```go title="Flag definition style (flags default from env)" file=<rootDir>/cmd/candles/main.go#L24-L51 showLineNumbers
+```
+
+```go title="JetStream pull subscription + shutdown wiring" file=<rootDir>/cmd/candles/main.go#L63-L101 showLineNumbers
+```
+
+```go title="Writer init (ClickHouse required, Parquet optional)" file=<rootDir>/cmd/candles/main.go#L103-L134 showLineNumbers
+```
+
+```go title="Fetch/process loop" file=<rootDir>/cmd/candles/main.go#L136-L143 showLineNumbers
+```
+
+**Why:** Using a durable pull consumer gives control over:
+
+- backpressure (batch size + wait interval)
+- at-least-once processing (explicit ACK/NACK)
+- restart behavior (durable consumer state is stored server-side)
+
+### type (Bridge)
+
+**Symbols:** Bridge
+
+```go title="type (Bridge)" file=<rootDir>/cmd/candles/main.go#L145-L149 showLineNumbers
+```
+
+**What:** `Bridge` bundles the dependencies needed to process a batch of JetStream messages.
+
+**How:** It holds:
+
+- a logger for structured-ish process logs
+- a ClickHouse writer to write translated `clickhouse.Candle` rows
+- an optional Parquet writer to append protobuf candles directly
+
+**Why:** Keeping dependencies on a struct makes it easier to unit test `Process` (by swapping writers) and keeps `main()` from becoming a giant function.
+
+### func (*Bridge) Process(ctx context.Context, msgs []*nats.Msg) error
+
+**Symbols:** Process
+
+```go title="func (*Bridge) Process(ctx context.Context, msgs []*nats.Msg) error" file=<rootDir>/cmd/candles/main.go#L151-L197 showLineNumbers
+```
+
+**What:** Processes one fetched batch of JetStream messages: decode → write → ACK (or NACK on failure).
+
+**How:** The function enforces a safe acknowledgment strategy:
+
+- decode failures are immediately NACKed (so JetStream can redeliver later) and do not poison the whole batch
+- successful decodes are accumulated and only ACKed after storage writes succeed
+- on any write failure, *all* messages in the batch that were successfully decoded are NACKed (`nakAll`)
+
+The write order is:
+
+1. Write ClickHouse rows (source-of-truth for query serving)
+2. If configured, append to Parquet
+3. ACK messages
+
+This is an explicit “at-least-once” contract: the sink must be idempotent or dedupe must exist upstream (message IDs).
+
+**Why:** JetStream delivery is at-least-once. By delaying ACK until after persistence, the process avoids “ack then crash → data loss”.
+
+### func (*Bridge) nakAll(msgs []*nats.Msg)
+
+**Symbols:** nakAll
+
+```go title="func (*Bridge) nakAll(msgs []*nats.Msg)" file=<rootDir>/cmd/candles/main.go#L199-L203 showLineNumbers
+```
+
+**What:** Best-effort NACK helper for a list of JetStream messages.
+
+**How:** Iterates and calls `msg.Nak()` while ignoring errors (this is used in failure paths).
+
+**Why:** Keeps failure-handling code concise and consistent; on write failures we want to ensure redelivery.
+
+### const (q32Factor)
+
+**Symbols:** q32Factor
+
+```go title="const (q32Factor)" file=<rootDir>/cmd/candles/main.go#L205-L205 showLineNumbers
+```
+
+**What:** `q32Factor` is the scaling factor for Q32 fixed-point prices (`2^32`).
+
+**How:** Q32 prices are stored as integers where the real value is `val / 2^32`.
+
+**Why:** The protobuf candle schema uses integer Q32 fields (`*_px_q32`) to avoid float rounding/serialization drift in the event stream.
+
+### func translateCandle(c *dexv1.Candle) clickhouse.Candle
+
+**Symbols:** translateCandle
+
+```go title="func translateCandle(c *dexv1.Candle) clickhouse.Candle" file=<rootDir>/cmd/candles/main.go#L207-L217 showLineNumbers
+```
+
+**What:** Converts a protobuf candle message into the ClickHouse row type expected by the ClickHouse writer.
+
+**How:** It:
+
+- converts `window_start` (seconds) into a UTC `time.Time`
+- decodes Q32 prices into `float64` for ClickHouse float columns
+- computes a “volume” from `vol_quote` (a protobuf `U128`)
+
+**Why:** The canonical event stream remains integer-based for determinism; this bridge converts into the numeric types expected by the current ClickHouse candle writer.
+
+### func priceFromQ32(val int64) float64
+
+**Symbols:** priceFromQ32
+
+```go title="func priceFromQ32(val int64) float64" file=<rootDir>/cmd/candles/main.go#L219-L221 showLineNumbers
+```
+
+**What:** Converts a Q32 fixed-point integer into a floating-point price.
+
+**How:** Division by `q32Factor` (`2^32`) yields the real value.
+
+**Why:** ClickHouse candle tables store `open/high/low/close` as `Float64` for easy query math.
+
+### func volumeFromU128(u *dexv1.U128) float64
+
+**Symbols:** volumeFromU128
+
+```go title="func volumeFromU128(u *dexv1.U128) float64" file=<rootDir>/cmd/candles/main.go#L223-L229 showLineNumbers
+```
+
+**What:** Converts a protobuf `U128` (hi/lo) into a `float64`.
+
+**How:** `hi` is shifted by 64 bits (via `math.Ldexp`) and added to `lo`. Nil is treated as zero.
+
+**Why:** The Parquet/ClickHouse “canonical” candle schemas represent volumes as integers/decimals for exactness; this bridge converts into the float-based row type used by `sinks/clickhouse.Candle`.
+
+### func envOr(key, fallback string) string
+
+**Symbols:** envOr
+
+```go title="func envOr(key, fallback string) string" file=<rootDir>/cmd/candles/main.go#L231-L236 showLineNumbers
+```
+
+**What:** Returns an environment variable value or a fallback string.
+
+**How:** Reads `os.Getenv(key)` and returns `fallback` when empty.
+
+**Why:** Allows flags to default from env vars, which is convenient for container deployments.
+
+### func envOrInt(key string, fallback int) int
+
+**Symbols:** envOrInt
+
+```go title="func envOrInt(key string, fallback int) int" file=<rootDir>/cmd/candles/main.go#L238-L245 showLineNumbers
+```
+
+**What:** Integer variant of `envOr`.
+
+**How:** Parses the env var with `strconv.Atoi`; returns fallback on missing/parse failure.
+
+**Why:** Keeps `main()` flag setup readable while still supporting env-based configuration.

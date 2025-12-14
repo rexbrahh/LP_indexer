@@ -1,0 +1,47 @@
+---
+title: NATS / JetStream design
+---
+
+JetStream is the backbone for event distribution and durability.
+
+## Stream + subjects
+
+By default:
+
+- Stream: `DEX`
+- Subject root: `dex.sol`
+
+Typical subjects follow the pattern:
+
+```text
+dex.sol.blocks.head
+dex.sol.tx.meta
+dex.sol.<program>.swap
+dex.sol.candle.<scope>.<timeframe>
+```
+
+## Deterministic message IDs
+
+Producers should set `Nats-Msg-Id` so JetStream can de-duplicate replays and backfills.
+
+## Local bootstrap
+
+```bash
+make ops.jetstream.init
+make ops.jetstream.verify
+```
+
+Configs live in `ops/jetstream/`.
+
+### Default consumer configuration
+
+The default swap consumer is defined as:
+
+```json title="ops/jetstream/consumer.swaps.json" file=<rootDir>/ops/jetstream/consumer.swaps.json showLineNumbers
+```
+
+Key fields:
+
+- `filter_subject`: binds the consumer to swap subjects only (by default `dex.sol.*.swap`).
+- `ack_policy`: explicit ack so sinks can control at-least-once behavior.
+- `deliver_policy`: `new` by default for “only start from now” (backfills typically override this).

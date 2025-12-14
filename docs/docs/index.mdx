@@ -1,0 +1,40 @@
+---
+title: LP Indexer Documentation
+slug: /
+---
+
+This site documents the LP Indexer codebase: how to run it, how data flows through the system, and a full annotated reference for the core source files.
+
+## Start here
+
+- [System overview](./start-here/overview)
+- [Quickstart (local dev)](./start-here/quickstart)
+- [Repository tour](./start-here/repo-tour)
+- [Dev environment](./start-here/dev-environment)
+- [Glossary](./start-here/glossary)
+
+## Quickstart (local)
+
+```bash
+# 1) Enter the dev shell (recommended)
+nix develop
+
+# 2) Start local dependencies (NATS + ClickHouse)
+make up
+
+# 3) Create JetStream stream/consumer (requires `nats` CLI)
+make ops.jetstream.init
+
+# 4) Run a pipeline component (example: geyser ingestor)
+make run.ingestor.geyser
+```
+
+If you want a self-contained validation harness, see:
+
+- [Ops: Local dev](./ops/local-dev)
+- `make sink-e2e` (ClickHouse + Parquet sink end-to-end harness)
+
+## Legacy Markdown docs
+
+The previous `docs/` folder was archived to `docs-archive/` at the repo root. See [Legacy docs archive](./reference/legacy-archive).
+

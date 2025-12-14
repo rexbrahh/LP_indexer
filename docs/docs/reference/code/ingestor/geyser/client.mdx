@@ -1,0 +1,225 @@
+---
+title: "ingestor/geyser/client.go"
+---
+
+This page is an **annotated source reference**. Code blocks are imported from the repository at build time.
+
+## What this file is
+
+_TODO: one-paragraph summary of responsibility and boundaries._
+
+## Why this file exists
+
+_TODO: architectural motivation and why this logic lives here (vs elsewhere)._ 
+
+## Full source
+
+```go title="ingestor/geyser/client.go" file=<rootDir>/ingestor/geyser/client.go showLineNumbers
+```
+
+## Walkthrough (by declaration)
+
+### package geyser
+
+```go title="package geyser" file=<rootDir>/ingestor/geyser/client.go#L1-L1 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### imports
+
+```go title="imports" file=<rootDir>/ingestor/geyser/client.go#L3-L15 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### const (ReconnectBackoff, ReplaySlotWindow)
+
+**Symbols:** ReconnectBackoff, ReplaySlotWindow
+
+```go title="const (ReconnectBackoff, ReplaySlotWindow)" file=<rootDir>/ingestor/geyser/client.go#L17-L22 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### type (tokenAuth)
+
+**Symbols:** tokenAuth
+
+```go title="type (tokenAuth)" file=<rootDir>/ingestor/geyser/client.go#L24-L27 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### func (tokenAuth) GetRequestMetadata
+
+**Symbols:** GetRequestMetadata
+
+```go title="func (tokenAuth) GetRequestMetadata" file=<rootDir>/ingestor/geyser/client.go#L29-L31 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### func (tokenAuth) RequireTransportSecurity
+
+**Symbols:** RequireTransportSecurity
+
+```go title="func (tokenAuth) RequireTransportSecurity" file=<rootDir>/ingestor/geyser/client.go#L33-L35 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### type (Client)
+
+**Symbols:** Client
+
+```go title="type (Client)" file=<rootDir>/ingestor/geyser/client.go#L37-L44 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### func NewClient
+
+**Symbols:** NewClient
+
+```go title="func NewClient" file=<rootDir>/ingestor/geyser/client.go#L46-L58 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### func (*Client) Connect
+
+**Symbols:** Connect
+
+```go title="func (*Client) Connect" file=<rootDir>/ingestor/geyser/client.go#L60-L83 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### func (*Client) Subscribe
+
+**Symbols:** Subscribe
+
+```go title="func (*Client) Subscribe" file=<rootDir>/ingestor/geyser/client.go#L85-L93 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### func (*Client) subscribeLoop
+
+**Symbols:** subscribeLoop
+
+```go title="func (*Client) subscribeLoop" file=<rootDir>/ingestor/geyser/client.go#L95-L162 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### func (*Client) buildSubscribeRequest
+
+**Symbols:** buildSubscribeRequest
+
+```go title="func (*Client) buildSubscribeRequest" file=<rootDir>/ingestor/geyser/client.go#L164-L195 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### func (*Client) processStream
+
+**Symbols:** processStream
+
+```go title="func (*Client) processStream" file=<rootDir>/ingestor/geyser/client.go#L197-L232 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### func extractSlotFromUpdate
+
+**Symbols:** extractSlotFromUpdate
+
+```go title="func extractSlotFromUpdate" file=<rootDir>/ingestor/geyser/client.go#L234-L250 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### func (*Client) Close
+
+**Symbols:** Close
+
+```go title="func (*Client) Close" file=<rootDir>/ingestor/geyser/client.go#L252-L259 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### func (*Client) Name
+
+**Symbols:** Name
+
+```go title="func (*Client) Name" file=<rootDir>/ingestor/geyser/client.go#L261-L263 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+

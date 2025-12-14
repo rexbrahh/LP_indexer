@@ -1,0 +1,25 @@
+---
+title: "Service: API"
+---
+
+The API layer serves persisted data to downstream clients.
+
+## Where code lives
+
+- `api/http/` – HTTP server and handlers
+
+## Current entrypoint
+
+The API currently ships as a `main` package under `api/http/`:
+
+```bash
+go run ./api/http
+```
+
+```go title="api/http/main.go" file=<rootDir>/api/http/main.go showLineNumbers
+```
+
+## Typical dependencies
+
+- ClickHouse (source of truth for analytical queries)
+- Redis (hot cache / windowed data)

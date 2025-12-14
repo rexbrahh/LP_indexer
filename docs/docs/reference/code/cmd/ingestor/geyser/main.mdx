@@ -1,0 +1,93 @@
+---
+title: "cmd/ingestor/geyser/main.go"
+---
+
+This page is an **annotated source reference**. Code blocks are imported from the repository at build time.
+
+## What this file is
+
+`cmd/ingestor/geyser/main.go` is the **process entrypoint** for the “Geyser ingestor” binary. Its job is to:
+
+- load runtime configuration (program filters + NATS publishing config)
+- choose which implementation to run (normal vs failover with Helius)
+- install shutdown handling (SIGINT/SIGTERM)
+- run the long-lived service loop
+
+All long-running behavior (Geyser subscription, decoding/publishing, metrics) is implemented in the `ingestor/geyser` package; this `main` exists primarily for wiring.
+
+## Why this file exists
+
+In Go, binaries live in `package main` and are the boundary where:
+
+- **configuration** enters the system (`os.Getenv`, config file paths)
+- **dependency wiring** happens (choose service variants, pass configs)
+- **process lifecycle** is defined (signal handling, context cancellation)
+
+Keeping this file thin makes the core logic easier to unit test (in packages), and makes ops behavior explicit (what env vars matter, what shutdown looks like).
+
+## Full source
+
+```go title="cmd/ingestor/geyser/main.go" file=<rootDir>/cmd/ingestor/geyser/main.go showLineNumbers
+```
+
+## Walkthrough (by declaration)
+
+### package main
+
+```go title="package main" file=<rootDir>/cmd/ingestor/geyser/main.go#L1-L1 showLineNumbers
+```
+
+**What:** Declares a Go binary entrypoint. Any file in `package main` can define `func main()` and compile to an executable.
+
+**How:** The Go toolchain builds a single `main` package into a binary; imported packages provide the real functionality.
+
+**Why:** It cleanly separates “process wiring” from reusable library code in `ingestor/*` and `sinks/*`.
+
+### imports
+
+```go title="imports" file=<rootDir>/cmd/ingestor/geyser/main.go#L3-L13 showLineNumbers
+```
+
+**What:** Pulls in standard library pieces (context + signals) plus internal packages that implement the service.
+
+**How:** The ingestor is assembled from:
+
+- `ingestor/geyser`: Geyser client + service implementation (and failover wrapper).
+- `ingestor/helius`: optional fallback streaming client.
+- `sinks/nats` (imported as `natsx`): shared NATS/JetStream config loader used across services.
+
+**Why:** Centralizing NATS config parsing in one package (`sinks/nats`) prevents each binary from re-implementing “read env vars → validate → connect”.
+
+### func main()
+
+**Symbols:** main
+
+```go title="func main()" file=<rootDir>/cmd/ingestor/geyser/main.go#L15-L82 showLineNumbers
+```
+
+**What:** Wires configuration + dependencies, then runs the ingestor until the process is cancelled.
+
+**How:** The function follows a consistent “service main” pattern used across this repo:
+
+1. Create a logger with a distinct prefix for log routing.
+2. Load configuration from env/files.
+3. Construct the correct long-running service implementation.
+4. Create a cancellable context and cancel it on SIGINT/SIGTERM.
+5. Call `Run(ctx, startSlot)` and treat `context.Canceled` as a clean shutdown.
+
+Key wiring steps (excerpted):
+
+```go title="Config load (programs + NATS)" file=<rootDir>/cmd/ingestor/geyser/main.go#L16-L30 showLineNumbers
+```
+
+```go title="Service selection (normal vs failover)" file=<rootDir>/cmd/ingestor/geyser/main.go#L31-L63 showLineNumbers
+```
+
+```go title="Lifecycle: context + signal handling + Run()" file=<rootDir>/cmd/ingestor/geyser/main.go#L65-L82 showLineNumbers
+```
+
+**Why:** This binary is the “operational boundary” for running ingestion in production:
+
+- It makes environment knobs explicit (`PROGRAMS_YAML_PATH`, `INGESTOR_METRICS_ADDR`, `ENABLE_HELIUS_FALLBACK`).
+- It cleanly isolates optional features (Helius fallback) behind an env flag without polluting the steady-state service code.
+- It ensures shutdown is cooperative (context cancellation), which is required for graceful draining and clean JetStream publishing semantics.

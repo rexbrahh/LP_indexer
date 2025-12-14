@@ -1,0 +1,316 @@
+---
+title: "ingestor/decoder/decoder.go"
+---
+
+This page is an **annotated source reference**. Code blocks are imported from the repository at build time.
+
+## What this file is
+
+_TODO: one-paragraph summary of responsibility and boundaries._
+
+## Why this file exists
+
+_TODO: architectural motivation and why this logic lives here (vs elsewhere)._ 
+
+## Full source
+
+```go title="ingestor/decoder/decoder.go" file=<rootDir>/ingestor/decoder/decoder.go showLineNumbers
+```
+
+## Walkthrough (by declaration)
+
+### package decoder
+
+```go title="package decoder" file=<rootDir>/ingestor/decoder/decoder.go#L1-L1 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### imports
+
+```go title="imports" file=<rootDir>/ingestor/decoder/decoder.go#L3-L18 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### const (chainIDSolana)
+
+**Symbols:** chainIDSolana
+
+```go title="const (chainIDSolana)" file=<rootDir>/ingestor/decoder/decoder.go#L20-L20 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### type (Decoder)
+
+**Symbols:** Decoder
+
+```go title="type (Decoder)" file=<rootDir>/ingestor/decoder/decoder.go#L22-L30 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### func New
+
+**Symbols:** New
+
+```go title="func New" file=<rootDir>/ingestor/decoder/decoder.go#L32-L45 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### func (*Decoder) SlotCache
+
+**Symbols:** SlotCache
+
+```go title="func (*Decoder) SlotCache" file=<rootDir>/ingestor/decoder/decoder.go#L47-L51 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### func (*Decoder) HandleBlockMeta
+
+**Symbols:** HandleBlockMeta
+
+```go title="func (*Decoder) HandleBlockMeta" file=<rootDir>/ingestor/decoder/decoder.go#L53-L61 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### func (*Decoder) HandleAccount
+
+**Symbols:** HandleAccount
+
+```go title="func (*Decoder) HandleAccount" file=<rootDir>/ingestor/decoder/decoder.go#L63-L82 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### func (*Decoder) DecodeTransaction
+
+**Symbols:** DecodeTransaction
+
+```go title="func (*Decoder) DecodeTransaction" file=<rootDir>/ingestor/decoder/decoder.go#L84-L163 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### type (DecodeError)
+
+**Symbols:** DecodeError
+
+```go title="type (DecodeError)" file=<rootDir>/ingestor/decoder/decoder.go#L165-L169 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### func (*DecodeError) Error
+
+**Symbols:** Error
+
+```go title="func (*DecodeError) Error" file=<rootDir>/ingestor/decoder/decoder.go#L171-L176 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### func (*DecodeError) Unwrap
+
+**Symbols:** Unwrap
+
+```go title="func (*DecodeError) Unwrap" file=<rootDir>/ingestor/decoder/decoder.go#L178-L183 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### func (*Decoder) handleRaydiumAccount
+
+**Symbols:** handleRaydiumAccount
+
+```go title="func (*Decoder) handleRaydiumAccount" file=<rootDir>/ingestor/decoder/decoder.go#L187-L241 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### func (*Decoder) buildRaydiumSwap
+
+**Symbols:** buildRaydiumSwap
+
+```go title="func (*Decoder) buildRaydiumSwap" file=<rootDir>/ingestor/decoder/decoder.go#L243-L284 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### func (*Decoder) buildOrcaSwap
+
+**Symbols:** buildOrcaSwap
+
+```go title="func (*Decoder) buildOrcaSwap" file=<rootDir>/ingestor/decoder/decoder.go#L286-L352 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### func (*Decoder) buildMeteoraSwap
+
+**Symbols:** buildMeteoraSwap
+
+```go title="func (*Decoder) buildMeteoraSwap" file=<rootDir>/ingestor/decoder/decoder.go#L354-L413 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### func convertRaydiumSwap
+
+**Symbols:** convertRaydiumSwap
+
+```go title="func convertRaydiumSwap" file=<rootDir>/ingestor/decoder/decoder.go#L415-L442 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### type (tokenBalance)
+
+**Symbols:** tokenBalance
+
+```go title="type (tokenBalance)" file=<rootDir>/ingestor/decoder/decoder.go#L444-L451 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### func extractVaultBalances
+
+**Symbols:** extractVaultBalances
+
+```go title="func extractVaultBalances" file=<rootDir>/ingestor/decoder/decoder.go#L453-L496 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### func resolvePool
+
+**Symbols:** resolvePool
+
+```go title="func resolvePool" file=<rootDir>/ingestor/decoder/decoder.go#L498-L536 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### func parseAmount
+
+**Symbols:** parseAmount
+
+```go title="func parseAmount" file=<rootDir>/ingestor/decoder/decoder.go#L538-L551 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### func encodeSignature
+
+**Symbols:** encodeSignature
+
+```go title="func encodeSignature" file=<rootDir>/ingestor/decoder/decoder.go#L553-L558 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### func lookupSlotTimestamp
+
+**Symbols:** lookupSlotTimestamp
+
+```go title="func lookupSlotTimestamp" file=<rootDir>/ingestor/decoder/decoder.go#L560-L569 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+

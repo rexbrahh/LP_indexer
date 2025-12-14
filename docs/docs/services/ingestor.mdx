@@ -1,0 +1,24 @@
+---
+title: "Service: ingestor"
+---
+
+The ingestor connects to a chain data source and publishes canonical events into JetStream.
+
+## Entrypoints
+
+- `cmd/ingestor/geyser/main.go`
+- `cmd/ingestor/geyser-demo/main.go`
+
+## What the entrypoint does (wiring)
+
+The Geyser ingestor binary is intentionally thin: it loads config from env/files, chooses which service implementation to run (normal vs. failover), installs shutdown handling, and then calls `Run`.
+
+```go title="cmd/ingestor/geyser/main.go" file=<rootDir>/cmd/ingestor/geyser/main.go showLineNumbers
+```
+
+## Primary responsibilities
+
+1. Connect to data source.
+2. Filter relevant programs/accounts.
+3. Decode or delegate decode.
+4. Publish canonical events to JetStream subjects.

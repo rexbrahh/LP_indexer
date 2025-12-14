@@ -1,0 +1,264 @@
+---
+title: "sinks/clickhouse/writer.go"
+---
+
+This page is an **annotated source reference**. Code blocks are imported from the repository at build time.
+
+## What this file is
+
+_TODO: one-paragraph summary of responsibility and boundaries._
+
+## Why this file exists
+
+_TODO: architectural motivation and why this logic lives here (vs elsewhere)._ 
+
+## Full source
+
+```go title="sinks/clickhouse/writer.go" file=<rootDir>/sinks/clickhouse/writer.go showLineNumbers
+```
+
+## Walkthrough (by declaration)
+
+### package clickhouse
+
+```go title="package clickhouse" file=<rootDir>/sinks/clickhouse/writer.go#L1-L1 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### imports
+
+```go title="imports" file=<rootDir>/sinks/clickhouse/writer.go#L3-L12 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### type (Config)
+
+**Symbols:** Config
+
+```go title="type (Config)" file=<rootDir>/sinks/clickhouse/writer.go#L14-L25 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### type (Writer)
+
+**Symbols:** Writer
+
+```go title="type (Writer)" file=<rootDir>/sinks/clickhouse/writer.go#L27-L34 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### type (tradeBatch)
+
+**Symbols:** tradeBatch
+
+```go title="type (tradeBatch)" file=<rootDir>/sinks/clickhouse/writer.go#L36-L59 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### type (candleBatch)
+
+**Symbols:** candleBatch
+
+```go title="type (candleBatch)" file=<rootDir>/sinks/clickhouse/writer.go#L61-L70 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### func NewWithConfig
+
+**Symbols:** NewWithConfig
+
+```go title="func NewWithConfig" file=<rootDir>/sinks/clickhouse/writer.go#L72-L127 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### func validateConfig
+
+**Symbols:** validateConfig
+
+```go title="func validateConfig" file=<rootDir>/sinks/clickhouse/writer.go#L129-L150 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### func connectWithRetry
+
+**Symbols:** connectWithRetry
+
+```go title="func connectWithRetry" file=<rootDir>/sinks/clickhouse/writer.go#L152-L192 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### func parseDSN
+
+**Symbols:** parseDSN
+
+```go title="func parseDSN" file=<rootDir>/sinks/clickhouse/writer.go#L194-L240 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### type (Trade)
+
+**Symbols:** Trade
+
+```go title="type (Trade)" file=<rootDir>/sinks/clickhouse/writer.go#L242-L265 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### func (*Writer) WriteTrades
+
+**Symbols:** WriteTrades
+
+```go title="func (*Writer) WriteTrades" file=<rootDir>/sinks/clickhouse/writer.go#L267-L309 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### type (Candle)
+
+**Symbols:** Candle
+
+```go title="type (Candle)" file=<rootDir>/sinks/clickhouse/writer.go#L311-L320 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### func (*Writer) WriteCandles
+
+**Symbols:** WriteCandles
+
+```go title="func (*Writer) WriteCandles" file=<rootDir>/sinks/clickhouse/writer.go#L322-L342 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### func (*Writer) flushTrades
+
+**Symbols:** flushTrades
+
+```go title="func (*Writer) flushTrades" file=<rootDir>/sinks/clickhouse/writer.go#L344-L408 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### func (*Writer) flushCandles
+
+**Symbols:** flushCandles
+
+```go title="func (*Writer) flushCandles" file=<rootDir>/sinks/clickhouse/writer.go#L410-L446 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### func (*Writer) Flush
+
+**Symbols:** Flush
+
+```go title="func (*Writer) Flush" file=<rootDir>/sinks/clickhouse/writer.go#L448-L454 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### func decimal128FromUint64
+
+**Symbols:** decimal128FromUint64
+
+```go title="func decimal128FromUint64" file=<rootDir>/sinks/clickhouse/writer.go#L456-L458 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+
+### func (*Writer) Close
+
+**Symbols:** Close
+
+```go title="func (*Writer) Close" file=<rootDir>/sinks/clickhouse/writer.go#L460-L466 showLineNumbers
+```
+
+**What:** _TODO_
+
+**How:** _TODO_
+
+**Why:** _TODO_
+

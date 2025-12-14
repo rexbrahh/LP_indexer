@@ -1,0 +1,73 @@
+---
+title: "cmd/bridge/main.go"
+---
+
+This page is an **annotated source reference**. Code blocks are imported from the repository at build time.
+
+## What this file is
+
+`cmd/bridge/main.go` is the **process entrypoint** for the legacy bridge service. The bridge typically consumes from a “source” JetStream stream/subject map and republishes into a “target” stream/subject map so older downstream consumers can keep working during migration.
+
+## Why this file exists
+
+This binary is the ops boundary for running the bridge:
+
+- it loads `bridge` configuration from environment variables
+- it wires up Prometheus metrics collection and (optionally) a metrics HTTP server
+- it defines lifecycle/shutdown behavior
+
+All “real work” (subject mapping, consumption/publishing, metrics) lives in the `bridge/` package.
+
+## Full source
+
+```go title="cmd/bridge/main.go" file=<rootDir>/cmd/bridge/main.go showLineNumbers
+```
+
+## Walkthrough (by declaration)
+
+### package main
+
+```go title="package main" file=<rootDir>/cmd/bridge/main.go#L1-L1 showLineNumbers
+```
+
+**What:** Declares a Go binary entrypoint package.
+
+**How:** `func main()` below is the process start symbol; the bridge package provides runtime behavior.
+
+**Why:** Keeping the bridge wiring in `cmd/bridge` isolates operational concerns from reusable code.
+
+### imports
+
+```go title="imports" file=<rootDir>/cmd/bridge/main.go#L3-L14 showLineNumbers
+```
+
+**What:** Imports standard lifecycle packages, Prometheus collectors, and the internal `bridge` implementation.
+
+**How:**
+
+- `prometheus.NewRegistry()` creates a dedicated registry (instead of using the global default).
+- `collectors.NewProcessCollector` and `collectors.NewGoCollector` provide baseline runtime metrics.
+- `bridge` contains the bridge runtime and option types.
+
+**Why:** A dedicated registry avoids accidental metric collisions across packages and makes the bridge’s metrics surface deliberate.
+
+### func main()
+
+**Symbols:** main
+
+```go title="func main()" file=<rootDir>/cmd/bridge/main.go#L16-L52 showLineNumbers
+```
+
+**What:** Loads config, wires metrics options, constructs the bridge service, and runs it until shutdown.
+
+**How:** The entrypoint follows the repo’s standard daemon pattern, plus metrics wiring:
+
+```go title="Config + metrics registry + options" file=<rootDir>/cmd/bridge/main.go#L17-L36 showLineNumbers
+```
+
+```go title="Lifecycle: context + signal + Run()" file=<rootDir>/cmd/bridge/main.go#L38-L51 showLineNumbers
+```
+
+Operationally, `cfg.MetricsAddr` controls whether the bridge starts an HTTP listener for Prometheus scraping.
+
+**Why:** The bridge is used during cutover; metrics and graceful shutdown are critical for proving correctness (no dropped messages) and for running safe “shadow” migrations.

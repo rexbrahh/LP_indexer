@@ -1,0 +1,149 @@
+---
+title: "cmd/tools/parquetinspect/main.go"
+---
+
+This page is an **annotated source reference**. Code blocks are imported from the repository at build time.
+
+## What this file is
+
+`cmd/tools/parquetinspect/main.go` is a small CLI tool that **reads Parquet candle files** and emits a JSON summary of basic invariants (row counts, required fields, and a few sanity checks).
+
+It is primarily used by `scripts/run_sink_e2e.sh` to validate that the Parquet sink wrote the expected rows and that key columns (scope/timeframe/window_start/trades) are well-formed.
+
+## Why this file exists
+
+Parquet validation in a CI-ish harness is tricky:
+
+- Parquet files are not trivially greppable.
+- We want a deterministic, machine-readable summary (`json`) that shell scripts can assert on.
+- We want to validate schema and values without requiring a full analytical stack.
+
+This tool provides a stable interface: given `--pattern`, output one JSON object on stdout.
+
+## Full source
+
+```go title="cmd/tools/parquetinspect/main.go" file=<rootDir>/cmd/tools/parquetinspect/main.go showLineNumbers
+```
+
+## Walkthrough (by declaration)
+
+### package main
+
+```go title="package main" file=<rootDir>/cmd/tools/parquetinspect/main.go#L1-L1 showLineNumbers
+```
+
+**What:** Declares a standalone executable.
+
+**How:** The binary is invoked via `go run ./cmd/tools/parquetinspect --pattern ...` (or built and run directly).
+
+**Why:** Keeping this logic in a dedicated tool makes the sink E2E harness self-contained and easy to evolve.
+
+### imports
+
+```go title="imports" file=<rootDir>/cmd/tools/parquetinspect/main.go#L3-L14 showLineNumbers
+```
+
+**What:** Standard CLI/file utilities plus the Parquet reader implementation.
+
+**How:**
+
+- `flag` + `filepath.Glob` implement “select files by glob”.
+- `github.com/parquet-go/parquet-go` provides a typed reader (`parquet.NewGenericReader[T]`) to decode rows into a Go struct.
+
+**Why:** Using a typed reader keeps the validation close to the schema the sink writes (and avoids shelling out to external tools for everything).
+
+### type (candleRow)
+
+**Symbols:** candleRow
+
+```go title="type (candleRow)" file=<rootDir>/cmd/tools/parquetinspect/main.go#L16-L34 showLineNumbers
+```
+
+**What:** `candleRow` is the **expected Parquet schema** for candle rows as read by this tool.
+
+**How:** Parquet struct tags map struct fields to Parquet columns (name + physical/logical type). Examples:
+
+- `WindowStart` uses a timestamp logical type (`unit=SECONDS`), so we can assert it is set.
+- `Scope` and `Timeframe` are UTF8 strings; we can validate non-empty and allowed values.
+- `VolBaseHi/Lo` and `VolQuoteHi/Lo` mirror the sink’s encoding of protobuf `U128` into two 64-bit halves.
+
+**Why:** The E2E harness needs a single, explicit “contract” for what the Parquet sink writes so we can catch schema regressions early.
+
+### type (summary)
+
+**Symbols:** summary
+
+```go title="type (summary)" file=<rootDir>/cmd/tools/parquetinspect/main.go#L36-L45 showLineNumbers
+```
+
+**What:** `summary` is the JSON output shape produced by this tool.
+
+**How:** Counters are accumulated while reading rows; sets are tracked via `map[string]struct{}` and later converted into sorted slices for stable comparisons.
+
+**Why:** Scripts can use `jq` to assert that counts are zero/non-zero and that unique sets match expected values.
+
+### func main()
+
+**Symbols:** main
+
+```go title="func main()" file=<rootDir>/cmd/tools/parquetinspect/main.go#L47-L81 showLineNumbers
+```
+
+**What:** CLI entrypoint: parse arguments, scan matching Parquet files, emit JSON summary.
+
+**How:** High-level flow:
+
+1. Read `--pattern` and glob matching files.
+2. For each file, call `inspectFile` to update counters/sets.
+3. Convert sets to sorted arrays and JSON-encode to stdout.
+
+In the sink E2E harness, it’s invoked like:
+
+```bash title="scripts/run_sink_e2e.sh (invocation excerpt)" file=<rootDir>/scripts/run_sink_e2e.sh#L197-L208 showLineNumbers
+```
+
+**Why:** Producing a single JSON document is an ergonomic contract for shell-based harnesses and CI.
+
+### func inspectFile(path string, sum *summary, timeframeSet, scopeSet map[string]struct{}) error
+
+**Symbols:** inspectFile
+
+```go title="func inspectFile(path string, sum *summary, timeframeSet, scopeSet map[string]struct{}) error" file=<rootDir>/cmd/tools/parquetinspect/main.go#L83-L108 showLineNumbers
+```
+
+**What:** Reads one Parquet file and updates the shared `summary` counters and “unique value” sets.
+
+**How:** Opens the file, creates a typed Parquet reader, reads rows in fixed-size batches, and passes each row to `processRow`.
+
+**Why:** Separating file I/O from per-row checks keeps `main` simple and makes the per-row logic reusable/testable.
+
+### func processRow(row *candleRow, sum *summary, timeframeSet, scopeSet map[string]struct{})
+
+**Symbols:** processRow
+
+```go title="func processRow(row *candleRow, sum *summary, timeframeSet, scopeSet map[string]struct{})" file=<rootDir>/cmd/tools/parquetinspect/main.go#L110-L135 showLineNumbers
+```
+
+**What:** Applies a small set of invariants to one decoded Parquet row.
+
+**How:** The checks are intentionally “cheap” and aimed at catching obvious regressions:
+
+- `Timeframe` must be non-empty.
+- `Scope` must be non-empty and one of `pair`/`pool`.
+- `WindowStart` must be positive (set and sane).
+- `Trades` must be non-negative.
+
+**Why:** These fields are used as keys or routing values downstream; catching bad values early prevents subtle corruption in batch exports.
+
+### func toSortedSlice(set map[string]struct{}) []string
+
+**Symbols:** toSortedSlice
+
+```go title="func toSortedSlice(set map[string]struct{}) []string" file=<rootDir>/cmd/tools/parquetinspect/main.go#L137-L147 showLineNumbers
+```
+
+**What:** Converts a set of strings into a stable, sorted slice.
+
+**How:** Collects keys into a slice, sorts lexicographically, returns `nil` for an empty set.
+
+**Why:** Stable ordering is important for deterministic JSON output and reliable equality checks in scripts.

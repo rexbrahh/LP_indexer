@@ -1,0 +1,74 @@
+---
+title: "cmd/sink/clickhouse/main.go"
+---
+
+This page is an **annotated source reference**. Code blocks are imported from the repository at build time.
+
+## What this file is
+
+`cmd/sink/clickhouse/main.go` is the **process entrypoint** for the ClickHouse sink service. It loads sink configuration from environment variables, constructs a long-running consumer service, and runs it until shutdown.
+
+## Why this file exists
+
+This file exists to keep the operational surface area small and explicit:
+
+- env/config parsing is centralized and validated in `sinks/clickhouse`
+- the process lifecycle (signals, cancellation) is defined in one place
+- the business logic (JetStream consumption, batching, ClickHouse writes) is testable in packages, not in `main`
+
+## Full source
+
+```go title="cmd/sink/clickhouse/main.go" file=<rootDir>/cmd/sink/clickhouse/main.go showLineNumbers
+```
+
+## Walkthrough (by declaration)
+
+### package main
+
+```go title="package main" file=<rootDir>/cmd/sink/clickhouse/main.go#L1-L1 showLineNumbers
+```
+
+**What:** Declares a binary entrypoint package.
+
+**How:** Compiling a `package main` that defines `func main()` produces an executable.
+
+**Why:** Entrypoint wiring stays separate from the `sinks/clickhouse` library/service implementation.
+
+### imports
+
+```go title="imports" file=<rootDir>/cmd/sink/clickhouse/main.go#L3-L11 showLineNumbers
+```
+
+**What:** Pulls in standard lifecycle utilities and the ClickHouse sink implementation.
+
+**How:**
+
+- `context`, `os/signal`, `syscall` provide graceful shutdown via context cancellation.
+- `sinks/clickhouse` provides config parsing and the long-running sink service.
+
+**Why:** Every sink process should have predictable shutdown semantics; the sink package owns persistence and JetStream details.
+
+### func main()
+
+**Symbols:** main
+
+```go title="func main()" file=<rootDir>/cmd/sink/clickhouse/main.go#L13-L40 showLineNumbers
+```
+
+**What:** Constructs and runs the ClickHouse sink service until the process is cancelled.
+
+**How:** The function follows a consistent “service main” pattern:
+
+1. Create a logger with a unique prefix.
+2. Load/validate config from env.
+3. Construct the service.
+4. Cancel on SIGINT/SIGTERM.
+5. Run the service; treat `context.Canceled` as success.
+
+```go title="Config load + service init" file=<rootDir>/cmd/sink/clickhouse/main.go#L14-L28 showLineNumbers
+```
+
+```go title="Signal handling + Run()" file=<rootDir>/cmd/sink/clickhouse/main.go#L29-L39 showLineNumbers
+```
+
+**Why:** ClickHouse sinks are often run as long-lived daemons; explicit cancellation ensures the consumer can stop pulling from JetStream and flush/exit cleanly.

@@ -1,0 +1,35 @@
+---
+title: Dev environment
+---
+
+## Recommended: Nix
+
+The repo is set up to work best with Nix:
+
+```bash
+nix develop
+```
+
+This should provide:
+
+- Go 1.22
+- Clang 17 (for the C++ engines)
+- generator tools used by scripts / protobuf workflows
+
+The repo’s “golden path” commands are summarized in `AGENTS.md`:
+
+```md title="AGENTS.md (build/test quick reference)" file=<rootDir>/AGENTS.md#L6-L18 showLineNumbers
+```
+
+## Common tasks
+
+```bash
+make test
+make build
+make proto-gen
+```
+
+## Formatting conventions
+
+- Go: `gofmt` (run `gofmt -w` on modified files)
+- Prefer explicit `context.Context` threading, early returns, and table-driven tests.

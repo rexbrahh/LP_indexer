@@ -1,0 +1,40 @@
+---
+title: System overview
+---
+
+LP Indexer is a Solana market-data pipeline that normalizes DEX activity (swaps, candles) into a canonical event stream and persists it to queryable stores.
+
+## Mental model
+
+At a high level, the runtime dataflow is:
+
+```text
+ingest -> decode -> publish -> sink -> serve
+```
+
+- **Ingest**: connect to chain data sources (Geyser / RPC / providers) and capture raw updates.
+- **Decode**: interpret program-specific instructions (Raydium, Orca Whirlpools, Meteora…) into canonical swap/candle events.
+- **Publish**: write canonical events into NATS JetStream subjects with deterministic message IDs.
+- **Sink**: consume canonical events and persist them (ClickHouse tables, Parquet batches).
+- **Serve**: expose APIs/metrics on top of persisted state.
+
+## Where to start in the repo
+
+If you are new to the codebase, start with the entrypoints under `cmd/`:
+
+- `cmd/ingestor/geyser/main.go` – ingestor that publishes events into JetStream.
+- `cmd/sink/clickhouse/main.go` – ClickHouse sink service.
+- `cmd/sink/parquet/main.go` – Parquet sink service.
+- `cmd/bridge/main.go` – bridge for legacy compatibility (when enabled).
+
+Then read the runtime packages in this order:
+
+1. `ingestor/` (source ingestion + normalization boundary)
+2. `decoder/` (DEX-specific decoders)
+3. `sinks/` (ClickHouse/Parquet consumers and persistence)
+4. `api/` (serving layer)
+
+## What “canonical” means here
+
+Downstream consumers should not need to know which DEX emitted an event. The pipeline normalizes into a stable schema (fields like `chain_id`, `slot`, `sig`, `pool_id`, amounts, decimals, flags like `provisional`/`is_undo`, and candle OHLCV).
+
