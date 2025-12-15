@@ -6,11 +6,25 @@ This page is an **annotated source reference**. Code blocks are imported from th
 
 ## What this file is
 
-_TODO: one-paragraph summary of responsibility and boundaries._
+`sinks/clickhouse/service.go` implements the **JetStream → ClickHouse sink service loop**.
+
+At a high level it:
+
+- pull-subscribes to a subject namespace (`<subjectRoot>.>`) from a configured JetStream stream/consumer
+- decodes protobuf messages (swaps + block heads)
+- transforms `SwapEvent` messages into ClickHouse `Trade` rows
+- flushes the ClickHouse writer on a periodic ticker
 
 ## Why this file exists
 
-_TODO: architectural motivation and why this logic lives here (vs elsewhere)._ 
+JetStream stores events durably and supports replay/backfill semantics; ClickHouse stores events in an analytics-friendly column store.
+
+This file is where the repo defines the “sink contract” between the two:
+
+- **routing**: which subjects the sink reads
+- **decoding**: which protobuf types are understood
+- **persistence**: which events become stored rows (and how timestamps are derived)
+- **reliability**: ack/nak behavior and flush policy
 
 ## Full source
 
@@ -24,22 +38,22 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="package clickhouse" file=<rootDir>/sinks/clickhouse/service.go#L1-L1 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Declares the ClickHouse sink service implementation in the `clickhouse` package.
 
-**How:** _TODO_
+**How:** Commands construct a `Service` via `NewService(ctx, cfg)` and run it with `Run(ctx)`.
 
-**Why:** _TODO_
+**Why:** Keeping the service loop in a package (not the command) makes it reusable and testable.
 
 ### imports
 
 ```go title="imports" file=<rootDir>/sinks/clickhouse/service.go#L3-L14 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Dependencies for the sink loop: context/time, NATS/JetStream consumption, protobuf decoding, and generated message types.
 
-**How:** _TODO_
+**How:** `proto.Unmarshal` decodes the JetStream payload into typed structs; `nats.PullSubscribe` + `sub.Fetch` implement pull-based consumption.
 
-**Why:** _TODO_
+**Why:** The sink is fundamentally “consume + decode + write”; these imports are the pieces required to do that reliably.
 
 ### type (tradeWriter)
 
@@ -48,11 +62,14 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="type (tradeWriter)" file=<rootDir>/sinks/clickhouse/service.go#L16-L19 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Minimal interface required by the swap processor.
 
-**How:** _TODO_
+**How:** The processor calls:
 
-**Why:** _TODO_
+- `WriteTrades` to enqueue trades for insertion (writer handles batching)
+- `Flush` to force any buffered rows to be written
+
+**Why:** This decouples “event processing” from the concrete ClickHouse implementation, simplifying unit tests and enabling alternative writers.
 
 ### type (processor)
 
@@ -61,11 +78,14 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="type (processor)" file=<rootDir>/sinks/clickhouse/service.go#L21-L24 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Event transformer plus a small in-memory cache for timestamps.
 
-**How:** _TODO_
+**How:** It holds:
 
-**Why:** _TODO_
+- a `tradeWriter` for persistence
+- a `slotTimes` map that tracks `slot -> block timestamp`
+
+**Why:** Swap events are joined with block heads to attach wall-clock timestamps before writing to ClickHouse.
 
 ### func newProcessor
 
@@ -74,11 +94,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func newProcessor" file=<rootDir>/sinks/clickhouse/service.go#L26-L31 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Constructs a processor with an empty slot→timestamp cache.
 
-**How:** _TODO_
+**How:** Initializes `slotTimes` to a non-nil map so handlers can insert/delete without extra checks.
 
-**Why:** _TODO_
+**Why:** The processor is long-lived; a stable map lets it accumulate timestamps across many message batches.
 
 ### func (*processor) handleBlockHead
 
@@ -87,11 +107,15 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*processor) handleBlockHead" file=<rootDir>/sinks/clickhouse/service.go#L33-L46 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Updates the `slotTimes` cache from a `BlockHead` message.
 
-**How:** _TODO_
+**How:**
 
-**Why:** _TODO_
+- Converts `ts_sec` to a UTC `time.Time`.
+- Stores `slot -> timestamp` when the timestamp is non-zero.
+- If the block head status is `"dead"`, the entry is removed so future swaps in that slot don’t reuse a stale timestamp.
+
+**Why:** The sink wants to persist trades with meaningful timestamps while also avoiding poisoning data with timestamps for dead/non-finalized slots.
 
 ### func (*processor) handleSwap
 
@@ -100,11 +124,20 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*processor) handleSwap" file=<rootDir>/sinks/clickhouse/service.go#L48-L77 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Converts a decoded swap protobuf into a ClickHouse `Trade` row and writes it via the writer.
 
-**How:** _TODO_
+**How:** The handler:
 
-**Why:** _TODO_
+1. Looks up the best-known timestamp for the swap’s slot (`p.slotTimes[event.GetSlot()]`).
+2. Copies scalar fields from the protobuf into the `Trade` struct.
+3. Calls `WriteTrades(ctx, []Trade{trade})`. The writer batches internally and flushes when its batch size is reached.
+
+Notable fields:
+
+- `PriceQ32` is currently set to `0` (placeholder for future derived pricing).
+- `Provisional` and `IsUndo` are persisted so downstream queries can filter corrections/undo events.
+
+**Why:** Keeping this transformation isolated makes it easier to change the ClickHouse schema mapping without touching the JetStream consumption loop.
 
 ### type (Service)
 
@@ -113,11 +146,18 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="type (Service)" file=<rootDir>/sinks/clickhouse/service.go#L79-L86 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Long-running JetStream consumer that writes trades into ClickHouse.
 
-**How:** _TODO_
+**How:** It bundles:
 
-**Why:** _TODO_
+- validated config (`ServiceConfig`)
+- NATS connection + JetStream context
+- a pull subscription (consumer)
+- a `processor` that handles decoded events and timestamps
+
+`lastFlush` is currently unused; flush behavior is driven by the writer’s `FlushInterval` and batch thresholds.
+
+**Why:** The service owns lifecycle (connect, subscribe, drain/flush on exit) and implements an at-least-once sink loop.
 
 ### func NewService
 
@@ -126,11 +166,18 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func NewService" file=<rootDir>/sinks/clickhouse/service.go#L88-L120 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Constructs a ready-to-run sink service from validated configuration.
 
-**How:** _TODO_
+**How:** The constructor:
 
-**Why:** _TODO_
+1. Builds a ClickHouse writer via `NewWithConfig(ctx, cfg.Writer)`.
+2. Connects to NATS (`nats.Connect(cfg.NATSURL)`).
+3. Creates a JetStream context (`conn.JetStream()`).
+4. Pull-subscribes to `<SubjectRoot>.>` using:
+   - `nats.BindStream(cfg.Stream)` to bind to the intended stream
+   - `nats.ManualAck()` so the service controls ack/nak explicitly
+
+**Why:** Centralizing resource creation makes failures predictable and ensures partially-created resources are cleaned up on error.
 
 ### func (*Service) Run
 
@@ -139,11 +186,19 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*Service) Run" file=<rootDir>/sinks/clickhouse/service.go#L122-L155 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Main service loop: fetch messages, process them, and ack/nak.
 
-**How:** _TODO_
+**How:**
 
-**Why:** _TODO_
+- A ticker flushes the writer every `cfg.Writer.FlushInterval`.
+- `sub.Fetch(PullBatch, MaxWait(PullTimeout))` pulls messages in batches.
+- Timeouts (`nats.ErrTimeout`) are treated as “no messages yet” and the loop continues.
+- Each message is handled with `handleMessage`:
+  - on success: `Ack()`
+  - on error: `Nak()` and return the error (so the process can restart/alert)
+- On exit the service drains the NATS connection and flushes any buffered writes.
+
+**Why:** This pattern implements a simple at-least-once sink: messages are only acked after successful decoding + persistence.
 
 ### func (*Service) handleMessage
 
@@ -152,9 +207,19 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*Service) handleMessage" file=<rootDir>/sinks/clickhouse/service.go#L157-L179 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Decodes a JetStream message based on its subject suffix and dispatches to the processor.
 
-**How:** _TODO_
+**How:** Current routing rules:
 
-**Why:** _TODO_
+- `*.swap` → decode `dexv1.SwapEvent`, write to ClickHouse
+- `*.blocks.head` → decode `dexv1.BlockHead`, update slot→timestamp cache
+- `*.tx.meta` → currently ignored (but must be acked)
+- everything else → ignored
 
+Subjects are matched using `strings.HasSuffix` so events can be namespaced (e.g. `<root>.<program>.swap`).
+
+**Why:** The sink is intentionally conservative: it only persists the event types it explicitly understands, while safely acking other event types to keep the consumer moving.
+
+:::note
+The ClickHouse sink subscribes to `<subjectRoot>.>` (everything under the root), but it only writes swaps today. Candle events under the same root are ignored by `handleMessage` (and still acked for this consumer).
+:::

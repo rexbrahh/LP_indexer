@@ -6,11 +6,28 @@ This page is an **annotated source reference**. Code blocks are imported from th
 
 ## What this file is
 
-_TODO: one-paragraph summary of responsibility and boundaries._
+`decoder/meteora/decoder.go` implements the core Meteora swap decoding logic.
+
+Unlike some decoders that rely on custom instruction parsing, this decoder is
+primarily **balance- and log-driven**:
+
+- it infers swap amounts from pre/post token balance deltas
+- it normalizes base/quote orientation using shared canonical pair rules
+- it optionally enriches swaps using metadata encoded in program log lines
+
+The main entrypoint is `DecodeSwapEvent`.
 
 ## Why this file exists
 
-_TODO: architectural motivation and why this logic lives here (vs elsewhere)._ 
+Meteora has multiple pool flavours (CPMM and DLMM) and multiple program IDs.
+The instruction payload alone is often insufficient to extract a consistent,
+DEX-agnostic swap event.
+
+This file exists to:
+
+- provide one place to implement Meteora-specific decoding heuristics
+- output a normalized `SwapEvent` that can be converted to the canonical protobuf schema
+- keep the rest of the pipeline independent of Meteora’s log formats and instruction layouts
 
 ## Full source
 
@@ -24,22 +41,26 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="package meteora" file=<rootDir>/decoder/meteora/decoder.go#L1-L1 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Declares the Meteora decoder implementation package.
 
-**How:** _TODO_
+**How:** Higher-level ingestion code builds an `InstructionContext` and calls `DecodeSwapEvent`.
 
-**Why:** _TODO_
+**Why:** Encapsulates Meteora-specific decoding rules and keeps them separate from transport (Geyser/Helius) and from sinks.
 
 ### imports
 
 ```go title="imports" file=<rootDir>/decoder/meteora/decoder.go#L3-L13 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Dependencies for parsing balance/log data and canonical pair resolution.
 
-**How:** _TODO_
+**How:** Uses:
 
-**Why:** _TODO_
+- `decoder/common` for canonical pair resolution
+- stdlib `errors`, `fmt`, `strconv`, `strings`, `time` for parsing and error reporting
+- Yellowstone protobuf types (`pb`) for token balance snapshots
+
+**Why:** This decoder interprets transaction metadata (balances/logs) rather than raw instruction bytes, so string parsing and snapshot handling are central.
 
 ### var (ErrNotImplemented)
 
@@ -48,11 +69,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="var (ErrNotImplemented)" file=<rootDir>/decoder/meteora/decoder.go#L15-L17 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Legacy sentinel error retained for compatibility.
 
-**How:** _TODO_
+**How:** Defined but no longer returned by the decoder.
 
-**Why:** _TODO_
+**Why:** Callers may still have guard code that checks for this error from older versions; keeping it avoids breaking those integrations.
 
 ### var (ErrUnsupportedInstruction)
 
@@ -61,11 +82,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="var (ErrUnsupportedInstruction)" file=<rootDir>/decoder/meteora/decoder.go#L19-L21 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Sentinel error returned when the context does not match a recognizable Meteora swap.
 
-**How:** _TODO_
+**How:** `DecodeSwapEvent` wraps this error when it cannot infer a swap from accounts/balances.
 
-**Why:** _TODO_
+**Why:** Distinguishes “not a Meteora swap” from “a Meteora swap but decoding failed due to malformed data”.
 
 ### func DecodeSwapEvent
 
@@ -74,11 +95,25 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func DecodeSwapEvent" file=<rootDir>/decoder/meteora/decoder.go#L23-L141 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Decodes a Meteora swap into a normalized `SwapEvent` using the provided `InstructionContext`.
 
-**How:** _TODO_
+**How:** The function:
 
-**Why:** _TODO_
+1. Validates the context is present and has enough account indices and account keys.
+2. Defines `resolveAccount(pos)` to map an instruction-account position to a base58 pubkey string via `ctx.Accounts[index]`.
+3. Resolves the pool address (position 1 by convention).
+4. Identifies the “input” and “output” token account indices (positions 2 and 3) and looks up their pre/post balance deltas via `balanceForAccount`.
+5. Computes realized amounts:
+   - `amountIn` from the input account’s outgoing delta
+   - `amountOut` from the output account’s incoming delta
+6. Resolves canonical base/quote ordering with `common.ResolvePair(inputMint, outputMint)`.
+7. Determines base/quote amounts and whether base decreased (orientation signal).
+8. Derives decimals for each mint (preferring direct deltas, then scanning token balances).
+9. Constructs a `SwapEvent` and applies log-derived metadata via `applyLogMetadata` (fee bps and optional reserves).
+
+Returns `ErrUnsupportedInstruction` (wrapped) when there is no meaningful delta or when the account layout does not match expected conventions.
+
+**Why:** This decoder is designed to be robust across pool kinds and program versions by relying on universal signals (balance deltas + logs) rather than brittle binary instruction parsing.
 
 ### type (tokenBalanceDelta)
 
@@ -87,11 +122,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="type (tokenBalanceDelta)" file=<rootDir>/decoder/meteora/decoder.go#L143-L149 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Internal representation of a token account’s pre/post balance snapshot.
 
-**How:** _TODO_
+**How:** Stores account index, mint, decimals, and raw pre/post amounts.
 
-**Why:** _TODO_
+**Why:** Swap decoding needs to reason about “outgoing” and “incoming” deltas in a consistent way.
 
 ### func (*tokenBalanceDelta) outgoing
 
@@ -100,11 +135,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*tokenBalanceDelta) outgoing" file=<rootDir>/decoder/meteora/decoder.go#L151-L159 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Returns how much left the account (pre - post) when the balance decreased.
 
-**How:** _TODO_
+**How:** Computes `pre - post` when `pre >= post`; otherwise returns 0.
 
-**Why:** _TODO_
+**Why:** This is used to infer the input amount for swaps from balance deltas.
 
 ### func (*tokenBalanceDelta) incoming
 
@@ -113,11 +148,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*tokenBalanceDelta) incoming" file=<rootDir>/decoder/meteora/decoder.go#L161-L169 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Returns how much entered the account (post - pre) when the balance increased.
 
-**How:** _TODO_
+**How:** Computes `post - pre` when `post >= pre`; otherwise returns 0.
 
-**Why:** _TODO_
+**Why:** This is used to infer the output amount for swaps from balance deltas.
 
 ### func balanceForAccount
 
@@ -126,11 +161,13 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func balanceForAccount" file=<rootDir>/decoder/meteora/decoder.go#L171-L198 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Builds a `tokenBalanceDelta` for a given token account index using pre/post token balance snapshots.
 
-**How:** _TODO_
+**How:** Looks up matching `pb.TokenBalance` entries in the pre and post slices, parses amounts/decimals/mint via `extractBalance`, and chooses non-empty mint/decimals using `pickNonEmpty`/`pickDecimals`.
 
-**Why:** _TODO_
+Returns an error when the account index does not appear in either snapshot.
+
+**Why:** Token balances are the primary source of truth for realized swap amounts in this decoder.
 
 ### func findTokenBalance
 
@@ -139,11 +176,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func findTokenBalance" file=<rootDir>/decoder/meteora/decoder.go#L200-L207 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Finds a `pb.TokenBalance` entry for an account index.
 
-**How:** _TODO_
+**How:** Iterates the slice and returns the first match; returns nil if not found.
 
-**Why:** _TODO_
+**Why:** Yellowstone token balances are provided as slices, not maps; this helper centralizes the lookup logic.
 
 ### func extractBalance
 
@@ -152,11 +189,15 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func extractBalance" file=<rootDir>/decoder/meteora/decoder.go#L209-L227 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Extracts amount, decimals, and mint from a `pb.TokenBalance`.
 
-**How:** _TODO_
+**How:**
 
-**Why:** _TODO_
+- treats nil balances as zero values (no error)
+- parses the raw integer amount from `UiTokenAmount.amount` (defaults to `"0"`)
+- converts decimals to `uint8`, rejecting overflow
+
+**Why:** Token balances are string-encoded; decoding needs validated numeric values to compute deltas safely.
 
 ### func pickNonEmpty
 
@@ -165,11 +206,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func pickNonEmpty" file=<rootDir>/decoder/meteora/decoder.go#L229-L236 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Picks the first non-empty string from a list.
 
-**How:** _TODO_
+**How:** Iterates values and returns the first non-empty; returns `""` if all are empty.
 
-**Why:** _TODO_
+**Why:** Pre and post snapshots may differ in which fields are populated; this helper chooses a usable mint string.
 
 ### func pickDecimals
 
@@ -178,11 +219,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func pickDecimals" file=<rootDir>/decoder/meteora/decoder.go#L238-L245 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Picks the first non-zero decimals value from a list.
 
-**How:** _TODO_
+**How:** Returns the first non-zero value; returns 0 if all are zero.
 
-**Why:** _TODO_
+**Why:** Similar to mint picking: decimals may appear in either pre or post snapshots depending on provider behaviour.
 
 ### func decimalsForMint
 
@@ -191,11 +232,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func decimalsForMint" file=<rootDir>/decoder/meteora/decoder.go#L247-L276 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Determines decimals for a given mint using the available context.
 
-**How:** _TODO_
+**How:** Prefers decimals from provided `tokenBalanceDelta` entries, then falls back to scanning pre and post token balances for the mint.
 
-**Why:** _TODO_
+**Why:** Correct decimals are required for scaling amounts and for producing consistent canonical events; this helper keeps the fallback logic centralized.
 
 ### func applyLogMetadata
 
@@ -204,11 +245,16 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func applyLogMetadata" file=<rootDir>/decoder/meteora/decoder.go#L278-L306 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Extracts optional metadata (fee bps and reserves) from transaction log lines.
 
-**How:** _TODO_
+**How:** Tokenizes each log line and looks for key/value patterns:
 
-**Why:** _TODO_
+- `fee_bps=<n>` → sets `event.FeeBps`
+- reserves markers:
+  - DLMM: `virtual_reserves` with `base=<n>` and `quote=<n>`
+  - CPMM: `cpmm_reserves` with `base=<n>` and `quote=<n>`
+
+**Why:** Some Meteora swap details are emitted in logs rather than directly in instruction payloads or balance snapshots; parsing logs enriches events without requiring full on-chain state decoding.
 
 ### func tokenize
 
@@ -217,11 +263,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func tokenize" file=<rootDir>/decoder/meteora/decoder.go#L308-L315 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Splits a log line into normalized tokens.
 
-**How:** _TODO_
+**How:** Uses `strings.Fields` then trims punctuation characters from each field.
 
-**Why:** _TODO_
+**Why:** Log formats vary slightly; normalizing tokens makes downstream key matching more robust.
 
 ### func extractUint
 
@@ -230,11 +276,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func extractUint" file=<rootDir>/decoder/meteora/decoder.go#L317-L332 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Extracts a `uint64` value from tokens matching `key=<value>`.
 
-**How:** _TODO_
+**How:** Scans tokens for a `key=` prefix, parses the suffix as base-10 `uint64`, and returns `(value, true)` on success.
 
-**Why:** _TODO_
+**Why:** Keeps log parsing logic reusable and avoids duplicating parsing loops for each field.
 
 ### func extractReserves
 
@@ -243,9 +289,10 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func extractReserves" file=<rootDir>/decoder/meteora/decoder.go#L334-L362 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Extracts reserve values from tokenized logs after a marker token is observed.
 
-**How:** _TODO_
+**How:** Once a marker (e.g. `virtual_reserves` or `cpmm_reserves`) is found, it looks for subsequent `base=` and `quote=` tokens and parses their values.
 
-**Why:** _TODO_
+Returns `(base, quote, true)` when a marker was found and at least one reserve value is non-zero.
 
+**Why:** Reserve fields are optional enrichment signals. This helper encapsulates the “find marker, then read base/quote values” pattern used for both DLMM and CPMM pools.

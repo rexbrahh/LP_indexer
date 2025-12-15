@@ -6,11 +6,23 @@ This page is an **annotated source reference**. Code blocks are imported from th
 
 ## What this file is
 
-_TODO: one-paragraph summary of responsibility and boundaries._
+`api/http/types/types.go` defines the **public HTTP payload contract** for the API server.
+
+It includes:
+
+- response shapes (`HealthResponse`, `PoolResponse`, `CandlesResponse`, `ErrorResponse`)
+- core domain DTOs (`Candle`)
+- request validation helpers for candle timeframes (`ValidateTimeframe`, `SupportedTimeframes`)
 
 ## Why this file exists
 
-_TODO: architectural motivation and why this logic lives here (vs elsewhere)._ 
+API types are consumed by multiple layers:
+
+- the HTTP server handlers
+- potential clients/SDKs
+- tests and tooling that validate responses
+
+Centralizing them in a dedicated package ensures there is exactly one source of truth for JSON field names and validation rules.
 
 ## Full source
 
@@ -24,22 +36,26 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="package types" file=<rootDir>/api/http/types/types.go#L1-L1 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Declares the `types` package for API request/response shapes and helpers.
 
-**How:** _TODO_
+**How:** The HTTP server imports this package (often aliased as `apitypes`) and uses its structs in `writeJSON(...)` responses.
 
-**Why:** _TODO_
+**Why:** Keeping types out of `main` makes them reusable and keeps the server package focused on routing and I/O.
 
 ### imports
 
 ```go title="imports" file=<rootDir>/api/http/types/types.go#L3-L7 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Helpers for error values, stable ordering, and timestamps.
 
-**How:** _TODO_
+**How:**
 
-**Why:** _TODO_
+- `time.Time` represents candle timestamps.
+- `errors.New` creates sentinel errors.
+- `sort.Strings` provides a stable ordering for `SupportedTimeframes()`.
+
+**Why:** These types are intentionally lightweight so they can be used anywhere without bringing in heavy dependencies.
 
 ### type (HealthResponse)
 
@@ -48,11 +64,14 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="type (HealthResponse)" file=<rootDir>/api/http/types/types.go#L9-L13 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** JSON payload returned by `/healthz`.
 
-**How:** _TODO_
+**How:** It includes:
 
-**Why:** _TODO_
+- `status`: string like `"ok"`
+- `uptime`: string-form duration (human-friendly)
+
+**Why:** Health checks are consumed by operators and orchestrators; the response is intentionally simple and stable.
 
 ### type (PoolResponse)
 
@@ -61,11 +80,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="type (PoolResponse)" file=<rootDir>/api/http/types/types.go#L15-L21 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** JSON payload describing a liquidity pool for the API.
 
-**How:** _TODO_
+**How:** Fields include stable identifiers (`id`) and human/display metadata (`name`, base/quote assets). JSON tags define the external contract.
 
-**Why:** _TODO_
+**Why:** Pool metadata is the natural companion to candle endpoints and other analytical queries; defining it here keeps the contract consistent as storage/query implementations evolve.
 
 ### type (Candle)
 
@@ -74,11 +93,17 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="type (Candle)" file=<rootDir>/api/http/types/types.go#L23-L31 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** A single OHLCV candlestick data point.
 
-**How:** _TODO_
+**How:** It includes:
 
-**Why:** _TODO_
+- `timestamp`: candle boundary time (UTC recommended)
+- `open`, `high`, `low`, `close`: float64 prices
+- `volume`: float64 volume for the interval
+
+The server returns slices of `Candle` inside `CandlesResponse`.
+
+**Why:** Candles are a common downstream API primitive; the shape mirrors typical trading/charting expectations.
 
 ### type (CandlesResponse)
 
@@ -87,11 +112,15 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="type (CandlesResponse)" file=<rootDir>/api/http/types/types.go#L33-L38 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Response wrapper for the candles endpoint.
 
-**How:** _TODO_
+**How:** It includes:
 
-**Why:** _TODO_
+- `pool_id`: which pool the candles belong to
+- `timeframe`: the requested candle granularity
+- `candles`: the list of candle points
+
+**Why:** Wrapping the list provides room for metadata (paging, source, versioning) while keeping responses self-describing.
 
 ### type (ErrorResponse)
 
@@ -100,11 +129,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="type (ErrorResponse)" file=<rootDir>/api/http/types/types.go#L40-L43 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Generic API error payload.
 
-**How:** _TODO_
+**How:** Handlers return `ErrorResponse{Error: "...message..."}` with an appropriate HTTP status code.
 
-**Why:** _TODO_
+**Why:** A single, consistent error shape makes client code simpler and avoids ad-hoc error JSON per endpoint.
 
 ### var (ErrNotFound)
 
@@ -113,11 +142,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="var (ErrNotFound)" file=<rootDir>/api/http/types/types.go#L45-L46 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Sentinel error indicating a requested resource was not found.
 
-**How:** _TODO_
+**How:** The cache layer and handlers use `errors.Is(err, ErrNotFound)` to decide whether to fall back or return a 404-style response.
 
-**Why:** _TODO_
+**Why:** A shared not-found error allows layers (cache, DB queries, handlers) to communicate “missing data” without string matching.
 
 ### var (supportedTimeframes)
 
@@ -126,11 +155,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="var (supportedTimeframes)" file=<rootDir>/api/http/types/types.go#L48-L54 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Internal set of accepted candle timeframe strings.
 
-**How:** _TODO_
+**How:** It uses a `map[string]struct{}` to represent membership efficiently (`O(1)` lookup).
 
-**Why:** _TODO_
+**Why:** Keeping the list centralized ensures all endpoints and helpers agree on what timeframes are valid.
 
 ### func ValidateTimeframe
 
@@ -139,11 +168,14 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func ValidateTimeframe" file=<rootDir>/api/http/types/types.go#L56-L65 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Validates that a timeframe string is present and supported.
 
-**How:** _TODO_
+**How:** It returns an error when:
 
-**Why:** _TODO_
+- the string is empty (“missing timeframe”), or
+- the key is not present in `supportedTimeframes` (“invalid timeframe”)
+
+**Why:** Validation is a request boundary concern; failing early prevents downstream code from handling undefined time buckets.
 
 ### func SupportedTimeframes
 
@@ -152,9 +184,8 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func SupportedTimeframes" file=<rootDir>/api/http/types/types.go#L67-L75 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Returns a stable list of accepted timeframe strings.
 
-**How:** _TODO_
+**How:** It collects keys from `supportedTimeframes`, sorts them, and returns the slice.
 
-**Why:** _TODO_
-
+**Why:** A stable ordering is useful for documentation, UIs, and tests (no flaky “map iteration order” differences).

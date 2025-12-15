@@ -6,11 +6,25 @@ This page is an **annotated source reference**. Code blocks are imported from th
 
 ## What this file is
 
-_TODO: one-paragraph summary of responsibility and boundaries._
+`ingestor/geyser/client.go` implements a Yellowstone Geyser **gRPC streaming client** with:
+
+- TLS + per-RPC token authentication
+- automatic reconnect with backoff
+- a small replay window on reconnect (to reduce missed updates)
+
+It exposes a simple, channel-based API:
+
+- `Subscribe(startSlot) -> (<-chan *SubscribeUpdate, <-chan error)`
 
 ## Why this file exists
 
-_TODO: architectural motivation and why this logic lives here (vs elsewhere)._ 
+Ingestion is long-running and network-dependent. A robust client needs to:
+
+- handle transient disconnects without manual restarts
+- resume near the last processed slot
+- keep subscription filters consistent across reconnects
+
+Centralizing this logic in a single client implementation keeps the service loop (`service.go`) focused on “consume updates → decode → publish”.
 
 ## Full source
 
@@ -24,22 +38,22 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="package geyser" file=<rootDir>/ingestor/geyser/client.go#L1-L1 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Declares the Yellowstone Geyser ingestion package.
 
-**How:** _TODO_
+**How:** The package provides a client (`Client`) that produces `SubscribeUpdate` messages and higher-level services that turn those updates into canonical events.
 
-**Why:** _TODO_
+**Why:** Geyser-specific transport code should be isolated from decoder/sink logic so it can be swapped or combined with fallbacks.
 
 ### imports
 
 ```go title="imports" file=<rootDir>/ingestor/geyser/client.go#L3-L15 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Dependencies for gRPC streaming, TLS authentication, reconnection timing, and logging.
 
-**How:** _TODO_
+**How:** `grpc`/`credentials`/`keepalive` establish and maintain the connection; `io` is used to detect clean stream EOF; `pb` is the Yellowstone protobuf contract.
 
-**Why:** _TODO_
+**Why:** The client is essentially “dial + subscribe + recv loop”; these imports are the primitives for that lifecycle.
 
 ### const (ReconnectBackoff, ReplaySlotWindow)
 
@@ -48,11 +62,14 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="const (ReconnectBackoff, ReplaySlotWindow)" file=<rootDir>/ingestor/geyser/client.go#L17-L22 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Constants controlling reconnect behavior.
 
-**How:** _TODO_
+**How:**
 
-**Why:** _TODO_
+- `ReplaySlotWindow` defines how many slots to rewind on reconnect.
+- `ReconnectBackoff` defines the sleep between reconnect attempts.
+
+**Why:** Slot-based replay reduces the chance of missing updates during a disconnect, and a fixed backoff prevents tight retry loops when the upstream is down.
 
 ### type (tokenAuth)
 
@@ -61,11 +78,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="type (tokenAuth)" file=<rootDir>/ingestor/geyser/client.go#L24-L27 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Per-RPC credentials implementation for `x-token` authentication.
 
-**How:** _TODO_
+**How:** `grpc.WithPerRPCCredentials(tokenAuth{token: ...})` calls into this type for every request, attaching a header map.
 
-**Why:** _TODO_
+**Why:** Yellowstone Geyser endpoints commonly authenticate using an `x-token` header rather than mTLS or static IP allowlists.
 
 ### func (tokenAuth) GetRequestMetadata
 
@@ -74,11 +91,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (tokenAuth) GetRequestMetadata" file=<rootDir>/ingestor/geyser/client.go#L29-L31 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Supplies request metadata for authenticated gRPC calls.
 
-**How:** _TODO_
+**How:** Returns `map[string]string{"x-token": <token>}`.
 
-**Why:** _TODO_
+**Why:** This is how the Geyser endpoint receives the API key on every streaming call.
 
 ### func (tokenAuth) RequireTransportSecurity
 
@@ -87,11 +104,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (tokenAuth) RequireTransportSecurity" file=<rootDir>/ingestor/geyser/client.go#L33-L35 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Declares that these credentials require TLS.
 
-**How:** _TODO_
+**How:** Returns `true`, causing gRPC to refuse sending the header over an insecure connection.
 
-**Why:** _TODO_
+**Why:** API keys must not be transmitted in cleartext.
 
 ### type (Client)
 
@@ -100,11 +117,15 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="type (Client)" file=<rootDir>/ingestor/geyser/client.go#L37-L44 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** `Client` wraps a Yellowstone gRPC connection and manages subscription lifecycle.
 
-**How:** _TODO_
+**How:** It stores:
 
-**Why:** _TODO_
+- validated `*Config` (endpoint, token, program filters)
+- a `*grpc.ClientConn` + generated `pb.GeyserClient`
+- an internal `context.Context` + `cancel` used to stop the subscribe loop
+
+**Why:** The client is long-lived and needs explicit lifecycle control (connect, subscribe, cancel, close).
 
 ### func NewClient
 
@@ -113,11 +134,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func NewClient" file=<rootDir>/ingestor/geyser/client.go#L46-L58 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Validates configuration and constructs a client with its own cancellable context.
 
-**How:** _TODO_
+**How:** Calls `cfg.Validate()`, then creates `context.WithCancel(context.Background())` which is used by dial and the subscribe goroutine.
 
-**Why:** _TODO_
+**Why:** Separating client lifecycle from a caller’s request context makes it easier for services to own shutdown behavior cleanly.
 
 ### func (*Client) Connect
 
@@ -126,11 +147,18 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*Client) Connect" file=<rootDir>/ingestor/geyser/client.go#L60-L83 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Establishes the gRPC connection to the configured endpoint.
 
-**How:** _TODO_
+**How:** Dials with:
 
-**Why:** _TODO_
+- TLS transport credentials
+- keepalive pings (works even without an active stream)
+- a large max receive size (1GB) to tolerate large updates
+- per-RPC `x-token` authentication
+
+On success it initializes the generated `pb.GeyserClient`.
+
+**Why:** Connection parameters have a big impact on long-running streaming reliability; keeping them centralized ensures consistent behavior across binaries.
 
 ### func (*Client) Subscribe
 
@@ -139,11 +167,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*Client) Subscribe" file=<rootDir>/ingestor/geyser/client.go#L85-L93 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Starts a background goroutine that manages the subscription and returns read-only channels.
 
-**How:** _TODO_
+**How:** Allocates a buffered update channel and a single-slot error channel, then runs `subscribeLoop(startSlot, ...)` in a goroutine.
 
-**Why:** _TODO_
+**Why:** The service loop can `select` on updates/errors without having to manage reconnect logic itself.
 
 ### func (*Client) subscribeLoop
 
@@ -152,11 +180,21 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*Client) subscribeLoop" file=<rootDir>/ingestor/geyser/client.go#L95-L162 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Implements the “subscribe, recv, reconnect” loop for the client.
 
-**How:** _TODO_
+**How:** On each iteration it:
 
-**Why:** _TODO_
+1. Computes a replay slot:
+   - `replaySlot = currentSlot - ReplaySlotWindow` (bounded at 0)
+2. Builds a `SubscribeRequest` for `replaySlot`.
+3. Opens a subscription stream (`client.Subscribe(ctx)`) and sends the request.
+4. Calls `processStream` to forward `Recv()` updates into the update channel.
+5. Updates `currentSlot` using the highest slot observed.
+6. Sleeps `ReconnectBackoff` and repeats.
+
+Errors are forwarded on `errCh` but the loop keeps trying unless the context is cancelled.
+
+**Why:** Streaming connections can end for many transient reasons (network blips, upstream deploys). A dedicated loop with replay reduces data gaps while avoiding manual operational intervention.
 
 ### func (*Client) buildSubscribeRequest
 
@@ -165,11 +203,20 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*Client) buildSubscribeRequest" file=<rootDir>/ingestor/geyser/client.go#L164-L195 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Constructs the Yellowstone subscription request used by the client.
 
-**How:** _TODO_
+**How:** It:
 
-**Why:** _TODO_
+- creates an account filter entry per configured program ID (`Owner: [programID]`)
+- subscribes to slot and block-meta updates (`Slots` and `BlocksMeta`)
+- uses `CommitmentLevel_CONFIRMED`
+- sets `FromSlot` to the requested start slot
+
+**Why:** Filters are part of the ingest contract: they control which programs/accounts are observed and therefore which swaps can be decoded.
+
+:::note
+The request currently leaves the `Transactions` filter map empty. Depending on Yellowstone server behavior, this may result in no transaction updates. If swap decoding appears idle, this is a key place to verify/adjust.
+:::
 
 ### func (*Client) processStream
 
@@ -178,11 +225,15 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*Client) processStream" file=<rootDir>/ingestor/geyser/client.go#L197-L232 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Receives updates from the server stream and forwards them to the update channel.
 
-**How:** _TODO_
+**How:** Repeatedly calls `stream.Recv()` until EOF or error:
 
-**Why:** _TODO_
+- on EOF: returns the highest slot observed so far
+- on error: sends an error to `errCh` and returns
+- on success: extracts the slot from the update, updates `lastSlot`, then sends the update on `updateCh`
+
+**Why:** Separating “recv loop” from “reconnect loop” keeps responsibilities clear and makes it easier to test slot tracking behavior.
 
 ### func extractSlotFromUpdate
 
@@ -191,11 +242,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func extractSlotFromUpdate" file=<rootDir>/ingestor/geyser/client.go#L234-L250 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Extracts a slot number from any of the update variants.
 
-**How:** _TODO_
+**How:** Switches on the `SubscribeUpdate` oneof and returns the appropriate slot field; returns 0 for unknown/unsupported types.
 
-**Why:** _TODO_
+**Why:** Slot tracking drives reconnection and replay decisions; this helper centralizes that logic.
 
 ### func (*Client) Close
 
@@ -204,11 +255,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*Client) Close" file=<rootDir>/ingestor/geyser/client.go#L252-L259 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Stops the client and closes the underlying gRPC connection.
 
-**How:** _TODO_
+**How:** Cancels the client context and closes the `grpc.ClientConn` (if present).
 
-**Why:** _TODO_
+**Why:** Ensures that background goroutines exit and resources are released on shutdown.
 
 ### func (*Client) Name
 
@@ -217,9 +268,8 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*Client) Name" file=<rootDir>/ingestor/geyser/client.go#L261-L263 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Returns a stable name for this ingest source.
 
-**How:** _TODO_
+**How:** Always returns `"geyser"`.
 
-**Why:** _TODO_
-
+**Why:** The failover controller and metrics label sources by name.

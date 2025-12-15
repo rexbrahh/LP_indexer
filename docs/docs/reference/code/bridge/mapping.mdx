@@ -6,11 +6,34 @@ This page is an **annotated source reference**. Code blocks are imported from th
 
 ## What this file is
 
-_TODO: one-paragraph summary of responsibility and boundaries._
+`bridge/mapping.go` implements the **subject rewrite/drop rules** used by the JetStream bridge.
+
+It provides:
+
+- an operator-facing YAML schema (`SubjectMapping`)
+- parsing + validation (`LoadSubjectMappings`)
+- compilation into a fast runtime mapper (`mapperFromMappings`) based on **prefix matching**
+
+Example mapping file:
+
+```yaml
+mappings:
+  - source: "dex.sol.pools."
+    target: "legacy.dex.sol.pools."
+    drop: false
+  - source: "dex.sol.internal."
+    drop: true
+```
 
 ## Why this file exists
 
-_TODO: architectural motivation and why this logic lives here (vs elsewhere)._ 
+Cutovers are rarely “flip a switch”: some subjects must be remapped into legacy namespaces while others should be dropped (acknowledged upstream but not forwarded).
+
+Keeping mapping logic separate from the `bridge.Service` run loop:
+
+- makes the forwarding path easier to read
+- makes configuration failures obvious and actionable
+- keeps subject translation rules auditable and testable
 
 ## Full source
 
@@ -24,22 +47,28 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="package bridge" file=<rootDir>/bridge/mapping.go#L1-L1 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Declares the `bridge` package for mapping helpers that are used by the bridge service.
 
-**How:** _TODO_
+**How:** The bridge loads mappings from YAML (`LoadSubjectMappings`) and compiles them into a `SubjectMapper` that is invoked for every forwarded message.
 
-**Why:** _TODO_
+**Why:** Subject translation is bridge domain logic and belongs alongside `bridge/service.go`, not in the entrypoint binary.
 
 ### imports
 
 ```go title="imports" file=<rootDir>/bridge/mapping.go#L3-L11 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Dependencies for reading files, parsing YAML, and compiling efficient matching rules.
 
-**How:** _TODO_
+**How:**
 
-**Why:** _TODO_
+- `os.ReadFile` reads operator-provided mapping files.
+- `yaml.Unmarshal` decodes YAML into typed structs.
+- `strings` implements trimming and prefix matching.
+- `sort.Slice` orders rules so the most specific prefix wins.
+- `io/fs` supports `fs.FS`-backed loading for tests.
+
+**Why:** Mapping files are a configuration surface; this file keeps the implementation small and predictable (mostly stdlib + YAML).
 
 ### type (SubjectMapping)
 
@@ -48,11 +77,16 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="type (SubjectMapping)" file=<rootDir>/bridge/mapping.go#L13-L19 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** A single subject mapping rule describing how to translate a canonical subject into a legacy subject, or drop it.
 
-**How:** _TODO_
+**How:**
 
-**Why:** _TODO_
+- `Source` is a required prefix to match (after trimming whitespace).
+- If `Drop` is `true`, the bridge acknowledges the source message but publishes nothing.
+- If `Drop` is `false`, `Target` must be set; the mapper rewrites by replacing the prefix and preserving the suffix:
+  `mapped = Target + subject[len(Source):]`.
+
+**Why:** This is the minimal, operator-friendly control surface for cutover: remap namespaces and selectively suppress subjects.
 
 ### type (mappingFile)
 
@@ -61,11 +95,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="type (mappingFile)" file=<rootDir>/bridge/mapping.go#L21-L23 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** The top-level YAML structure expected by `LoadSubjectMappings`.
 
-**How:** _TODO_
+**How:** It unmarshals the root `mappings:` list into a slice of `SubjectMapping`.
 
-**Why:** _TODO_
+**Why:** A root struct keeps the file format extensible (versioning, metadata) without changing how individual mapping entries are represented.
 
 ### func LoadSubjectMappings
 
@@ -74,11 +108,19 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func LoadSubjectMappings" file=<rootDir>/bridge/mapping.go#L25-L56 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Loads subject mappings from a YAML file path and returns a validated, normalized slice.
 
-**How:** _TODO_
+**How:** The function:
 
-**Why:** _TODO_
+1. Reads the file from disk and rejects empty/whitespace-only content.
+2. Unmarshals YAML into `mappingFile`.
+3. Rejects files with no mappings.
+4. Trims whitespace and validates each entry:
+   - `Source` must be non-empty
+   - `Target` must be non-empty when `Drop=false`
+5. Returns a “cleaned” slice (only trimmed fields) for downstream use.
+
+**Why:** Bad configuration should fail fast with a precise error (`mapping 3: source is required`) rather than causing silent subject behavior changes at runtime.
 
 ### func mapperFromMappings
 
@@ -87,11 +129,19 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func mapperFromMappings" file=<rootDir>/bridge/mapping.go#L58-L91 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Compiles a slice of mapping rules into a single `SubjectMapper` function for the hot path.
 
-**How:** _TODO_
+**How:**
 
-**Why:** _TODO_
+- It copies rules into `compiledMapping` (a runtime-oriented struct).
+- It sorts by descending `source` length (and lexicographically as a tie-breaker) so the most specific prefix match is applied first.
+- The returned closure:
+  - finds the first prefix match
+  - returns `( "", false )` for drops
+  - returns the rewritten subject for rewrites
+  - falls back to identity (no match)
+
+**Why:** The bridge calls the mapper for every message; compilation + deterministic ordering keeps behavior predictable and efficient.
 
 ### type (compiledMapping)
 
@@ -100,11 +150,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="type (compiledMapping)" file=<rootDir>/bridge/mapping.go#L93-L97 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Internal representation of a mapping rule used by the compiled mapper.
 
-**How:** _TODO_
+**How:** It mirrors the external fields (`source`, `target`, `drop`) but without YAML tags and with lowercase field names to signal “internal-only”.
 
-**Why:** _TODO_
+**Why:** Separating external schema (operator-facing) from internal representation keeps the runtime mapping loop minimal and avoids accidental coupling to YAML concerns.
 
 ### func loadSubjectMappingsFS
 
@@ -113,9 +163,10 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func loadSubjectMappingsFS" file=<rootDir>/bridge/mapping.go#L99-L110 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Loads subject mappings from an `fs.FS` instead of disk.
 
-**How:** _TODO_
+**How:** It uses `fs.ReadFile` + `yaml.Unmarshal` and returns the raw `payload.Mappings` slice.
 
-**Why:** _TODO_
+This helper is intentionally lightweight (no trimming/validation) and is primarily useful for unit tests with an in-memory filesystem.
 
+**Why:** `fs.FS` enables hermetic tests (no temp files required) and makes it easy to embed fixtures if the mapping format evolves.

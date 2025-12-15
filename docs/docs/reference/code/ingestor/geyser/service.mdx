@@ -6,11 +6,23 @@ This page is an **annotated source reference**. Code blocks are imported from th
 
 ## What this file is
 
-_TODO: one-paragraph summary of responsibility and boundaries._
+`ingestor/geyser/service.go` wires together the three core runtime components of
+the Geyser ingestor:
+
+- a Geyser client (stream of `SubscribeUpdate` messages)
+- the `Processor` (decode + publish + finality handling)
+- a JetStream publisher (`sinks/nats.Publisher`)
+
+It also optionally exposes a Prometheus metrics endpoint.
 
 ## Why this file exists
 
-_TODO: architectural motivation and why this logic lives here (vs elsewhere)._ 
+This is the “composition root” for the Geyser ingestor runtime. Keeping wiring
+and lifecycle management here:
+
+- prevents `cmd/ingestor/geyser` from accumulating complex setup logic
+- keeps the client and processor reusable (including by the failover service)
+- provides a single place to control metrics behavior and shutdown semantics
 
 ## Full source
 
@@ -24,22 +36,22 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="package geyser" file=<rootDir>/ingestor/geyser/service.go#L1-L1 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Declares the `geyser` ingestion package.
 
-**How:** _TODO_
+**How:** This file provides the high-level service loop that owns connections, subscriptions, processing, and optional metrics HTTP server.
 
-**Why:** _TODO_
+**Why:** Separating “wiring + lifecycle” from “decode logic” improves testability and keeps binaries thin.
 
 ### imports
 
 ```go title="imports" file=<rootDir>/ingestor/geyser/service.go#L3-L18 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Dependencies for service lifecycle, HTTP metrics, and pipeline setup.
 
-**How:** _TODO_
+**How:** Prometheus packages create a registry and an HTTP handler; `natsx` provides the JetStream publisher; `common` provides the slot cache implementation.
 
-**Why:** _TODO_
+**Why:** The service owns two lifecycles: the ingest stream and (optionally) the metrics server.
 
 ### type (ClientInterface)
 
@@ -48,11 +60,15 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="type (ClientInterface)" file=<rootDir>/ingestor/geyser/service.go#L20-L26 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Interface describing the subset of a streaming client required by the service.
 
-**How:** _TODO_
+**How:** It expects:
 
-**Why:** _TODO_
+- `Connect` and `Close` for lifecycle
+- `Subscribe(startSlot)` to obtain update + error channels
+- `Name` for identification (used by failover/metrics)
+
+**Why:** Using an interface allows the same processor/publisher pipeline to be driven by different clients (e.g. Yellowstone Geyser vs Helius LaserStream in failover mode).
 
 ### type (Service)
 
@@ -61,11 +77,15 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="type (Service)" file=<rootDir>/ingestor/geyser/service.go#L28-L35 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** The single-client Geyser ingestor service.
 
-**How:** _TODO_
+**How:** Holds:
 
-**Why:** _TODO_
+- a concrete `ClientInterface`
+- a `Processor` for decoding and publishing
+- optional metrics server state (`metricsServer`, stop channel)
+
+**Why:** Centralizes ownership of resources so shutdown behavior is predictable.
 
 ### func NewService
 
@@ -74,11 +94,15 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func NewService" file=<rootDir>/ingestor/geyser/service.go#L37-L61 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Constructs a ready-to-run ingestor service.
 
-**How:** _TODO_
+**How:** Validates the geyser config, builds the streaming client via `NewClient`, then calls `setupPipeline` to create:
 
-**Why:** _TODO_
+- the JetStream publisher (`natsx.NewPublisher`)
+- the shared `Processor` (with its own slot cache and metrics registry)
+- the optional metrics HTTP server
+
+**Why:** Construction is the right place to fail fast on missing configuration (Geyser endpoint/API key or NATS settings).
 
 ### func (*Service) Run
 
@@ -87,11 +111,19 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*Service) Run" file=<rootDir>/ingestor/geyser/service.go#L63-L107 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Runs the service loop until the context is cancelled or an unrecoverable error occurs.
 
-**How:** _TODO_
+**How:**
 
-**Why:** _TODO_
+1. Connects the client.
+2. Starts the subscription (`Subscribe(startSlot)`).
+3. If metrics are enabled, starts an HTTP server in a goroutine.
+4. Enters a `select` loop:
+   - on context cancellation: shuts down metrics and returns
+   - on stream error: shuts down metrics and returns the error
+   - on update: dispatches to `processor.HandleUpdate`
+
+**Why:** The service loop is intentionally simple: it delegates all decoding/finality logic to `Processor` and all networking complexity to the client.
 
 ### func (*Service) shutdownMetrics
 
@@ -100,11 +132,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*Service) shutdownMetrics" file=<rootDir>/ingestor/geyser/service.go#L109-L117 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Gracefully stops the metrics HTTP server (when enabled).
 
-**How:** _TODO_
+**How:** Calls `Server.Shutdown` with a short timeout, then waits for the server goroutine to signal completion via `metricsStopCh`.
 
-**Why:** _TODO_
+**Why:** Clean shutdown avoids dangling listeners and ensures the process exits promptly on cancellation.
 
 ### func buildMetricsServer
 
@@ -113,11 +145,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func buildMetricsServer" file=<rootDir>/ingestor/geyser/service.go#L119-L128 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Constructs an `*http.Server` that serves Prometheus metrics.
 
-**How:** _TODO_
+**How:** Returns `nil` when the address is empty; otherwise creates an HTTP server with a `promhttp.HandlerFor` using the provided gatherer.
 
-**Why:** _TODO_
+**Why:** Making the metrics server optional keeps the service usable in minimal environments while still supporting observability in production.
 
 ### func setupPipeline
 
@@ -126,9 +158,13 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func setupPipeline" file=<rootDir>/ingestor/geyser/service.go#L130-L146 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Builds the shared “publisher + processor + metrics” pipeline components.
 
-**How:** _TODO_
+**How:** The pipeline setup:
 
-**Why:** _TODO_
+1. Creates a JetStream publisher from `natsCfg`.
+2. Creates a Prometheus registry and registers Go/process collectors.
+3. Creates a slot cache (`common.NewMemorySlotTimeCache`) and the `Processor`.
+4. Builds the optional metrics server and returns a stop channel for shutdown coordination.
 
+**Why:** Both `Service` and `FailoverService` need the same downstream pipeline; factoring setup into one function ensures consistent behavior and metrics.

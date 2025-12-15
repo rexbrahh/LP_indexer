@@ -6,11 +6,29 @@ This page is an **annotated source reference**. Code blocks are imported from th
 
 ## What this file is
 
-_TODO: one-paragraph summary of responsibility and boundaries._
+`ingestor/geyser/failover_service.go` implements a **primary/fallback ingestor**
+controller.
+
+It runs one streaming client at a time (typically:
+
+- primary: Yellowstone Geyser
+- fallback: Helius LaserStream
+
+) and feeds updates through a shared `Processor` + JetStream publisher pipeline.
+
+When the active stream ends with an error, it switches sources and periodically
+retries the primary.
 
 ## Why this file exists
 
-_TODO: architectural motivation and why this logic lives here (vs elsewhere)._ 
+Ingestion reliability is critical: downstream storage and analytics pipelines
+depend on a continuous stream of events.
+
+This failover service exists to:
+
+- keep the canonical event stream alive when one provider is degraded
+- avoid manual operator intervention during transient outages
+- provide basic health signals (active source + failure counters) via Prometheus
 
 ## Full source
 
@@ -24,22 +42,22 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="package geyser" file=<rootDir>/ingestor/geyser/failover_service.go#L1-L1 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Declares the `geyser` package that owns ingest services.
 
-**How:** _TODO_
+**How:** This file adds a wrapper service that can drive the same processor using different client implementations.
 
-**Why:** _TODO_
+**Why:** Failover is a runtime policy; keeping it near the ingest service (not inside the client or decoder) keeps layering clean.
 
 ### imports
 
 ```go title="imports" file=<rootDir>/ingestor/geyser/failover_service.go#L3-L15 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Dependencies for service control flow, metrics, and optional HTTP server lifecycle.
 
-**How:** _TODO_
+**How:** Prometheus is used for metrics; `log` and `fmt` provide basic operator-visible output; `natsx` provides the JetStream publisher config.
 
-**Why:** _TODO_
+**Why:** Failover decisions and outcomes should be observable and debuggable in production.
 
 ### type (FailoverService)
 
@@ -48,11 +66,17 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="type (FailoverService)" file=<rootDir>/ingestor/geyser/failover_service.go#L17-L31 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** `FailoverService` coordinates two clients (primary + fallback) driving a shared processor.
 
-**How:** _TODO_
+**How:** It holds:
 
-**Why:** _TODO_
+- `primary` and optional `fallback` clients (both satisfy `ClientInterface`)
+- a shared `Processor` that publishes canonical events
+- failover metrics (`activeSource` gauge, `source_failures_total` counter)
+- optional metrics HTTP server state
+- retry delays used when switching/retrying sources
+
+**Why:** Using a shared processor ensures both sources produce identical canonical events and prevents “two competing pipelines” that might publish duplicates differently.
 
 ### func NewFailoverService
 
@@ -61,11 +85,13 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func NewFailoverService" file=<rootDir>/ingestor/geyser/failover_service.go#L33-L57 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Constructs a failover service with a shared downstream pipeline.
 
-**How:** _TODO_
+**How:** Validates the primary client, calls `setupPipeline` to create the JetStream publisher + processor + metrics server, then registers failover-specific metrics in the same registry.
 
-**Why:** _TODO_
+When `fallback` is `nil`, the service behaves like the single-client `Service` (it only retries the primary).
+
+**Why:** Both sources should publish into the same JetStream subjects with the same message ID conventions; building one pipeline and swapping clients achieves that.
 
 ### func (*FailoverService) Run
 
@@ -74,11 +100,20 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*FailoverService) Run" file=<rootDir>/ingestor/geyser/failover_service.go#L59-L109 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Runs the failover loop until the context is cancelled.
 
-**How:** _TODO_
+**How:**
 
-**Why:** _TODO_
+1. Starts the optional metrics server (if configured).
+2. Builds the list of candidate clients: `[primary]` or `[primary, fallback]`.
+3. Repeatedly:
+   - sets the `activeSource` metric
+   - runs the current client via `runClient`
+   - on error: records a failure metric and logs the duration/error
+   - switches to the other client (when fallback exists)
+   - sleeps a configurable delay before the next attempt
+
+**Why:** Provider streams can end unexpectedly. Alternating sources + retrying the primary lets the system recover automatically while still preferring the primary when it becomes healthy again.
 
 ### func (*FailoverService) runClient
 
@@ -87,11 +122,17 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*FailoverService) runClient" file=<rootDir>/ingestor/geyser/failover_service.go#L111-L136 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Runs a single client connection/subscription until it errors or the context is cancelled.
 
-**How:** _TODO_
+**How:** Connects the client, subscribes starting at `startSlot`, then selects over:
 
-**Why:** _TODO_
+- `ctx.Done()` → return `context.Canceled`
+- stream errors → return the error
+- updates → `processor.HandleUpdate(ctx, update)`
+
+If the updates channel closes, it returns a sentinel `"update stream closed"` error.
+
+**Why:** This isolates the per-client streaming lifecycle so the outer `Run` loop can focus on failover policy (which client to run next).
 
 ### func (*FailoverService) shutdownMetrics
 
@@ -100,11 +141,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*FailoverService) shutdownMetrics" file=<rootDir>/ingestor/geyser/failover_service.go#L138-L146 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Gracefully stops the metrics HTTP server (when enabled).
 
-**How:** _TODO_
+**How:** Calls `Shutdown` with a short timeout and waits for the server goroutine to signal completion.
 
-**Why:** _TODO_
+**Why:** Ensures the process exits cleanly when the run loop ends (context cancelled).
 
 ### type (failoverMetrics)
 
@@ -113,11 +154,14 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="type (failoverMetrics)" file=<rootDir>/ingestor/geyser/failover_service.go#L148-L151 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Groups the Prometheus metrics used by the failover controller.
 
-**How:** _TODO_
+**How:** Contains:
 
-**Why:** _TODO_
+- `activeSource` gauge (which source is active)
+- `failures` counter vec labeled by source name
+
+**Why:** These are the core operational signals: “which provider are we using?” and “how often is each provider failing?”
 
 ### func newFailoverMetrics
 
@@ -126,11 +170,16 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func newFailoverMetrics" file=<rootDir>/ingestor/geyser/failover_service.go#L153-L171 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Registers and returns the failover metrics.
 
-**How:** _TODO_
+**How:** Uses `promauto.With(reg)` to create:
 
-**Why:** _TODO_
+- `dex_ingestor_active_source` gauge
+- `dex_ingestor_source_failures_total{source=...}` counter
+
+If `reg` is nil, it falls back to a new registry (primarily for tests).
+
+**Why:** Metrics must be registered in the same registry used by the service’s Prometheus handler so they are exposed consistently.
 
 ### func (*failoverMetrics) setActive
 
@@ -139,11 +188,15 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*failoverMetrics) setActive" file=<rootDir>/ingestor/geyser/failover_service.go#L173-L186 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Updates the `activeSource` gauge based on the current client name.
 
-**How:** _TODO_
+**How:** Sets:
 
-**Why:** _TODO_
+- `0` when the source is empty
+- `1` when the source name is `"geyser"`
+- `2` for any other source (currently used for Helius fallback)
+
+**Why:** This produces a single, easy-to-graph signal for dashboards and alerts (“we are currently on fallback”).
 
 ### func (*failoverMetrics) recordFailure
 
@@ -152,9 +205,8 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*failoverMetrics) recordFailure" file=<rootDir>/ingestor/geyser/failover_service.go#L188-L193 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Records a stream failure for a given source.
 
-**How:** _TODO_
+**How:** Increments `source_failures_total` with the `source` label.
 
-**Why:** _TODO_
-
+**Why:** Failure rates help identify provider instability and validate whether failover is doing useful work.

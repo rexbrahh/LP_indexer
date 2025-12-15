@@ -6,11 +6,23 @@ This page is an **annotated source reference**. Code blocks are imported from th
 
 ## What this file is
 
-_TODO: one-paragraph summary of responsibility and boundaries._
+`sinks/nats/config.go` defines the **shared JetStream publisher configuration** used by multiple binaries.
+
+It centralizes:
+
+- the environment variable names (`NATS_URL`, `NATS_STREAM`, …)
+- defaults for optional knobs (`SubjectRoot`, publish timeout)
+- validation rules (required fields, positive durations)
 
 ## Why this file exists
 
-_TODO: architectural motivation and why this logic lives here (vs elsewhere)._ 
+NATS/JetStream is a cross-cutting dependency: ingestors, tools, and services all need to connect and publish with consistent subject roots and timeouts.
+
+Keeping the config contract in one place prevents:
+
+- each binary inventing its own env var names
+- subtle mismatches (different subject roots, missing stream expectations)
+- “works locally but not in prod” bugs from unvalidated env configuration
 
 ## Full source
 
@@ -24,22 +36,22 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="package natsx" file=<rootDir>/sinks/nats/config.go#L1-L1 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Declares the `natsx` package (a small wrapper layer around NATS configuration/publishing).
 
-**How:** _TODO_
+**How:** Other packages import `github.com/rexbrahh/lp-indexer/sinks/nats` (aliased as `natsx` in some binaries) to load config and publish events.
 
-**Why:** _TODO_
+**Why:** “NATS config + publish conventions” are shared infrastructure and should not be duplicated across the repo.
 
 ### imports
 
 ```go title="imports" file=<rootDir>/sinks/nats/config.go#L3-L8 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Standard library helpers for env vars, parsing integers, and representing durations.
 
-**How:** _TODO_
+**How:** `strconv.Atoi` parses millisecond values; `time.Duration` stores publish timeouts.
 
-**Why:** _TODO_
+**Why:** Keeping config parsing dependency-free (stdlib only) makes it safe to import from anywhere.
 
 ### const (defaultPublishTimeout, envNATSStream, envNATSSubjectRoot, envNATSURL, envPublishTimeout)
 
@@ -48,11 +60,15 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="const (defaultPublishTimeout, envNATSStream, envNATSSubjectRoot, envNATSURL, envPublishTimeout)" file=<rootDir>/sinks/nats/config.go#L10-L17 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Defines defaults and the canonical environment variable names.
 
-**How:** _TODO_
+**How:**
 
-**Why:** _TODO_
+- `defaultPublishTimeout` is the fallback when a publisher is created without an explicit timeout.
+- `envNATSURL`, `envNATSStream`, and `envNATSSubjectRoot` define the connection/namespace contract.
+- `envPublishTimeout` reads timeout as milliseconds to keep env values simple for ops tooling.
+
+**Why:** A single source of truth avoids drift and keeps the “operational API” stable over time.
 
 ### type (Config)
 
@@ -61,11 +77,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="type (Config)" file=<rootDir>/sinks/nats/config.go#L19-L25 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** `Config` is the in-memory representation of publisher runtime settings.
 
-**How:** _TODO_
+**How:** It’s constructed via `DefaultConfig()` + env overrides (`FromEnv()`), then passed into `NewPublisher`.
 
-**Why:** _TODO_
+**Why:** The publisher needs both connection info (URL + stream) and namespace info (subject root) to publish correctly and safely.
 
 ### func DefaultConfig
 
@@ -74,11 +90,14 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func DefaultConfig" file=<rootDir>/sinks/nats/config.go#L27-L33 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Returns a `Config` pre-populated with sane defaults for optional fields.
 
-**How:** _TODO_
+**How:** Currently defaults:
 
-**Why:** _TODO_
+- `SubjectRoot = "dex.sol"`
+- `PublishTimeout = 5s`
+
+**Why:** Most deployments follow a standard subject namespace; defaults keep small tools ergonomic without sacrificing validation of required fields.
 
 ### func (Config) Validate
 
@@ -87,11 +106,15 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (Config) Validate" file=<rootDir>/sinks/nats/config.go#L35-L50 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Checks that required config fields are set and that durations are valid.
 
-**How:** _TODO_
+**How:** Validation enforces:
 
-**Why:** _TODO_
+- `URL` and `Stream` must be set
+- `SubjectRoot` must be non-empty (it namespaces all published subjects)
+- `PublishTimeout` must be positive
+
+**Why:** Failing fast on invalid config produces clearer operational errors than failing later inside NATS calls.
 
 ### func FromEnv
 
@@ -100,9 +123,13 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func FromEnv" file=<rootDir>/sinks/nats/config.go#L52-L72 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Reads environment variables into a validated `Config`.
 
-**How:** _TODO_
+**How:** The function:
 
-**Why:** _TODO_
+1. Starts from `DefaultConfig()`.
+2. Overwrites fields when env vars are present.
+3. Parses timeout milliseconds from `NATS_PUBLISH_TIMEOUT_MS` (if set).
+4. Returns `cfg.Validate()` so callers always receive a valid config.
 
+**Why:** This is the canonical “ops surface” for publishers; it makes it trivial for every binary to share the same env var contract.

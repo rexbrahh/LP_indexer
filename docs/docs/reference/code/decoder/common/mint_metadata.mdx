@@ -6,11 +6,26 @@ This page is an **annotated source reference**. Code blocks are imported from th
 
 ## What this file is
 
-_TODO: one-paragraph summary of responsibility and boundaries._
+`decoder/common/mint_metadata.go` defines a small mint metadata model and a
+pluggable lookup interface used by some decoders to:
+
+- fetch token decimals
+- determine canonical base/quote ordering using token symbols
+
+It also includes a simple in-memory provider pre-populated with common Solana
+tokens (useful for tests and local decoding).
 
 ## Why this file exists
 
-_TODO: architectural motivation and why this logic lives here (vs elsewhere)._ 
+Accurate swap normalization often requires:
+
+- the correct decimal count per mint (to scale amounts)
+- a consistent convention for base/quote ordering (e.g. `SOL/USDC` instead of `USDC/SOL`)
+
+By abstracting “mint metadata lookup” behind an interface, decoders can work with:
+
+- a stub provider in tests
+- a real provider backed by on-chain RPC, token lists, or a metadata service in production
 
 ## Full source
 
@@ -24,22 +39,22 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="package common" file=<rootDir>/decoder/common/mint_metadata.go#L1-L1 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Declares shared decoder utilities for mint metadata and ordering rules.
 
-**How:** _TODO_
+**How:** Decoders call into this package to fetch decimals and choose base/quote orientation deterministically.
 
-**Why:** _TODO_
+**Why:** Centralizing ordering/metadata logic prevents inconsistent pair orientation across different DEX decoders.
 
 ### imports
 
 ```go title="imports" file=<rootDir>/decoder/common/mint_metadata.go#L3-L6 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Dependencies for concurrency and error formatting.
 
-**How:** _TODO_
+**How:** The in-memory provider uses an RW mutex and returns helpful errors via `fmt.Errorf`.
 
-**Why:** _TODO_
+**Why:** Metadata lookups may be concurrent in decoders; correctness requires synchronization.
 
 ### type (MintMetadata)
 
@@ -48,11 +63,15 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="type (MintMetadata)" file=<rootDir>/decoder/common/mint_metadata.go#L8-L14 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Represents minimal metadata for a token mint.
 
-**How:** _TODO_
+**How:** Holds:
 
-**Why:** _TODO_
+- mint `Address`
+- human-friendly `Symbol` and `Name`
+- `Decimals` for amount scaling
+
+**Why:** Decoders need decimals to interpret raw integer amounts and often want symbols for canonical ordering rules.
 
 ### type (MintMetadataProvider)
 
@@ -61,11 +80,15 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="type (MintMetadataProvider)" file=<rootDir>/decoder/common/mint_metadata.go#L16-L27 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Interface for mint metadata lookups.
 
-**How:** _TODO_
+**How:** Provides:
 
-**Why:** _TODO_
+- `GetMintMetadata` (full metadata)
+- `GetDecimals` (convenience)
+- `CacheMintMetadata` (bulk preloading hook)
+
+**Why:** Allows decoders to be written against a stable contract while swapping implementations (token list, RPC, cache, etc.).
 
 ### type (InMemoryMintMetadataProvider)
 
@@ -74,11 +97,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="type (InMemoryMintMetadataProvider)" file=<rootDir>/decoder/common/mint_metadata.go#L29-L34 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Simple thread-safe in-memory implementation of `MintMetadataProvider`.
 
-**How:** _TODO_
+**How:** Stores a `map[mintAddress]*MintMetadata` protected by an RW mutex.
 
-**Why:** _TODO_
+**Why:** Useful as a stub in tests and as a lightweight implementation for local development.
 
 ### func NewInMemoryMintMetadataProvider
 
@@ -87,11 +110,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func NewInMemoryMintMetadataProvider" file=<rootDir>/decoder/common/mint_metadata.go#L36-L75 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Constructs an in-memory provider preloaded with common Solana mints.
 
-**How:** _TODO_
+**How:** Initializes the map and inserts metadata entries for well-known tokens like wrapped SOL, USDC, USDT, and ORCA.
 
-**Why:** _TODO_
+**Why:** Many decoder tests/fixtures involve these mints; preloading avoids repetitive setup and makes the stub immediately usable.
 
 ### func (*InMemoryMintMetadataProvider) GetMintMetadata
 
@@ -100,11 +123,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*InMemoryMintMetadataProvider) GetMintMetadata" file=<rootDir>/decoder/common/mint_metadata.go#L77-L88 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Looks up metadata for a mint address.
 
-**How:** _TODO_
+**How:** Uses a read lock and returns an error when the mint is not in the map.
 
-**Why:** _TODO_
+**Why:** Decoders depend on decimals/symbols for normalization; missing metadata should be an explicit failure in contexts where it is required.
 
 ### func (*InMemoryMintMetadataProvider) GetDecimals
 
@@ -113,11 +136,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*InMemoryMintMetadataProvider) GetDecimals" file=<rootDir>/decoder/common/mint_metadata.go#L90-L98 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Convenience method returning only the decimals for a mint.
 
-**How:** _TODO_
+**How:** Delegates to `GetMintMetadata` and returns `metadata.Decimals`.
 
-**Why:** _TODO_
+**Why:** Most decoding logic needs decimals more often than full metadata.
 
 ### func (*InMemoryMintMetadataProvider) CacheMintMetadata
 
@@ -126,11 +149,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*InMemoryMintMetadataProvider) CacheMintMetadata" file=<rootDir>/decoder/common/mint_metadata.go#L100-L105 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Bulk metadata preloading hook.
 
-**How:** _TODO_
+**How:** In this stub implementation it is a no-op.
 
-**Why:** _TODO_
+**Why:** The interface anticipates a real provider that may fetch/cache metadata from external sources; keeping the method allows that upgrade without changing call sites.
 
 ### func (*InMemoryMintMetadataProvider) AddMintMetadata
 
@@ -139,11 +162,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*InMemoryMintMetadataProvider) AddMintMetadata" file=<rootDir>/decoder/common/mint_metadata.go#L107-L113 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Adds or updates a mint metadata record.
 
-**How:** _TODO_
+**How:** Takes a write lock and sets `metadata[address] = record`.
 
-**Why:** _TODO_
+**Why:** Primarily used by tests to extend the stub provider beyond the pre-populated mints.
 
 ### var (canonicalPriority)
 
@@ -152,11 +175,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="var (canonicalPriority)" file=<rootDir>/decoder/common/mint_metadata.go#L115-L120 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Priority table for canonical base/quote ordering by token symbol.
 
-**How:** _TODO_
+**How:** Higher values represent “more canonical quote assets” (e.g. USDC outranks SOL).
 
-**Why:** _TODO_
+**Why:** Using a stable priority ordering ensures consistent pair orientation across swaps and across DEXes.
 
 ### func DetermineBaseQuote
 
@@ -165,11 +188,17 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func DetermineBaseQuote" file=<rootDir>/decoder/common/mint_metadata.go#L122-L150 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Determines which mint should be treated as base and which as quote.
 
-**How:** _TODO_
+**How:** The function:
 
-**Why:** _TODO_
+1. Loads metadata for both mints from the provider.
+2. Looks up symbol priorities.
+3. Chooses:
+   - when priorities differ: lower-priority mint becomes base, higher-priority mint becomes quote
+   - when priorities tie: uses lexicographic ordering of mint addresses for determinism
+
+**Why:** Canonical base/quote orientation makes downstream aggregation and querying much easier (you don’t want two markets `SOL/USDC` and `USDC/SOL` representing the same pool).
 
 ### func getPriority
 
@@ -178,9 +207,8 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func getPriority" file=<rootDir>/decoder/common/mint_metadata.go#L152-L157 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Helper that resolves a symbol into its priority score.
 
-**How:** _TODO_
+**How:** Returns the symbol’s configured score or falls back to the `"default"` score.
 
-**Why:** _TODO_
-
+**Why:** Keeps `DetermineBaseQuote` readable and centralizes fallback behavior.

@@ -6,11 +6,24 @@ This page is an **annotated source reference**. Code blocks are imported from th
 
 ## What this file is
 
-_TODO: one-paragraph summary of responsibility and boundaries._
+`decoder/raydium/instruction.go` defines Raydium CLMM program constants and the
+core data structures used to decode Raydium swap instructions:
+
+- `SwapInstruction`: decoded binary instruction payload
+- `SwapEvent`: normalized “what happened” view used by higher layers
+
+It also includes a small parser (`ParseSwapInstruction`) for the raw instruction
+byte layout.
 
 ## Why this file exists
 
-_TODO: architectural motivation and why this logic lives here (vs elsewhere)._ 
+Raydium CLMM swaps are encoded as compact binary instruction payloads.
+
+This file exists to:
+
+- keep the binary layout and parsing logic in one place
+- provide typed structures that higher-level decoders can consume safely
+- standardize the fields that downstream systems care about (amounts, direction, sqrt price)
 
 ## Full source
 
@@ -24,22 +37,22 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="package raydium" file=<rootDir>/decoder/raydium/instruction.go#L1-L1 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Declares the Raydium decoder package.
 
-**How:** _TODO_
+**How:** Other packages call `ParseSwapInstruction` and `ParseSwapEvent` (in `parser.go`) to decode swaps from transaction data.
 
-**Why:** _TODO_
+**Why:** Keeping Raydium-specific parsing isolated prevents program layout details from leaking into the generic ingestion pipeline.
 
 ### imports
 
 ```go title="imports" file=<rootDir>/decoder/raydium/instruction.go#L3-L6 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Dependencies for decoding binary instruction payloads.
 
-**How:** _TODO_
+**How:** `encoding/binary` reads little-endian integers from the instruction bytes; `fmt` formats parse errors.
 
-**Why:** _TODO_
+**Why:** Raydium instruction data is a packed byte array; decoding requires precise endian-aware reads.
 
 ### const (ProgramID)
 
@@ -48,11 +61,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="const (ProgramID)" file=<rootDir>/decoder/raydium/instruction.go#L8-L9 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** The on-chain program ID for Raydium CLMM swaps.
 
-**How:** _TODO_
+**How:** Used by the ingest decoder to route instructions/accounts to the correct decoder logic.
 
-**Why:** _TODO_
+**Why:** Program IDs are the canonical way to identify which on-chain program produced an instruction.
 
 ### type (SwapInstruction)
 
@@ -61,11 +74,16 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="type (SwapInstruction)" file=<rootDir>/decoder/raydium/instruction.go#L11-L29 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** In-memory representation of a decoded Raydium CLMM swap instruction payload.
 
-**How:** _TODO_
+**How:** Captures:
 
-**Why:** _TODO_
+- an 8-byte discriminator (copied from the payload prefix)
+- amount and threshold fields (`u64`)
+- a sqrt price limit encoded as a 128-bit Q64.64 fixed-point value (stored here as two `u64`s)
+- a direction flag (`IsBaseInput`)
+
+**Why:** The raw byte layout is not convenient to work with. Converting it to a struct makes downstream decoding and validation clearer and less error-prone.
 
 ### type (SwapEvent)
 
@@ -74,11 +92,18 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="type (SwapEvent)" file=<rootDir>/decoder/raydium/instruction.go#L31-L62 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Canonical-ish swap event model for Raydium swaps (still decoder-local).
 
-**How:** _TODO_
+**How:** Contains:
 
-**Why:** _TODO_
+- pool/mint identifiers and decimals
+- raw swap amounts (`AmountIn`, `AmountOut`)
+- fee info (`FeeBps`)
+- sqrt price fields (Q64.64 as low/high parts)
+- direction (`IsBaseInput`)
+- transaction context (slot, signature, timestamp)
+
+**Why:** Higher layers (ingest decoder, publishers) want a stable “swap happened” structure, regardless of instruction parsing details.
 
 ### func ParseSwapInstruction
 
@@ -87,11 +112,17 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func ParseSwapInstruction" file=<rootDir>/decoder/raydium/instruction.go#L64-L86 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Parses raw instruction bytes into a `SwapInstruction`.
 
-**How:** _TODO_
+**How:** Validates minimum length (41 bytes), then reads:
 
-**Why:** _TODO_
+- discriminator (8 bytes)
+- amount (u64)
+- other amount threshold (u64)
+- sqrt price limit (two u64s)
+- base-input flag (1 byte)
+
+**Why:** This is the low-level boundary between “opaque bytes” and “typed fields”. Bounds checks prevent panics and make decode failures explicit.
 
 ### func (*SwapInstruction) SqrtPriceX64
 
@@ -100,9 +131,8 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*SwapInstruction) SqrtPriceX64" file=<rootDir>/decoder/raydium/instruction.go#L88-L92 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Convenience accessor for the u128 sqrt price limit value.
 
-**How:** _TODO_
+**How:** Returns the `(low, high)` u64 parts.
 
-**Why:** _TODO_
-
+**Why:** Keeps callers from directly referencing struct fields and clarifies intent (“treat these two u64s as one fixed-point value”).

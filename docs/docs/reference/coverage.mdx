@@ -1,0 +1,87 @@
+---
+title: Documentation coverage
+---
+
+This page tracks **annotated-source coverage** for the core runtime Go code and documents the conventions used to keep it maintainable.
+
+## Coverage goal
+
+For each “core” Go file (see scope below), we want:
+
+1. A **full-source** view with line numbers.
+2. A **declaration-by-declaration walkthrough** explaining:
+   - what it is
+   - how it works
+   - why it exists
+
+The code excerpts are imported at build time with `remark-code-import`, so the docs always reflect the current repo state.
+
+## Scope (current)
+
+The generator (`scripts/docs/generate_go_code_reference.go`) scans these directories by default:
+
+- `cmd/`
+- `ingestor/`
+- `decoder/`
+- `sinks/`
+- `api/`
+- `bridge/`
+- `backfill/`
+
+Notes:
+
+- `*_test.go` files are intentionally excluded by default.
+- Generated outputs (e.g. `gen/`) should not be hand-edited and are not part of the annotated-source scope.
+
+## Current status
+
+As of the current repo snapshot, all non-test Go files under the scope directories above have an annotated page under:
+
+- `docs/docs/reference/code/**`
+
+Quick sanity checks:
+
+```bash
+rg -n "_TODO_" docs/docs/reference/code -S
+cd docs && npm run build
+```
+
+## How to maintain annotated-source docs
+
+### Add new pages when code is added
+
+When a new `.go` file lands under one of the scoped directories:
+
+1. Generate the MDX skeleton page (non-destructive by default):
+
+```bash
+go run ./scripts/docs/generate_go_code_reference.go
+```
+
+2. Fill in:
+   - `## What this file is`
+   - `## Why this file exists`
+   - every `**What/How/Why:** _TODO_` block
+
+### Keep code excerpts stable and readable
+
+- Prefer importing **full files** for scanning and **small line ranges** for declaration-level walkthroughs (the generator does this automatically).
+- When refactors shift line numbers, update `#Lx-Ly` ranges so each excerpt still matches the heading it’s documented under.
+- Keep heading text MDX-safe:
+  - Avoid putting full Go signatures in headings (e.g. channel types can be mis-parsed as JSX). The generator already uses `func (*T) Name` titles for this reason.
+
+### Conventions used in code reference pages
+
+- Use `showLineNumbers` for all imported snippets.
+- Keep the `What / How / Why` format consistent so readers can skim quickly.
+- Write “Why” in architectural terms (boundaries, invariants, and failure modes), not just restating the code.
+
+### Avoid overwriting manual annotations
+
+The generator **skips existing MDX files** unless you pass `-overwrite`.
+
+Only use `-overwrite` when you explicitly want to regenerate pages and are OK with losing manual edits:
+
+```bash
+go run ./scripts/docs/generate_go_code_reference.go -overwrite
+```

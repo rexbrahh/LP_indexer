@@ -6,11 +6,21 @@ This page is an **annotated source reference**. Code blocks are imported from th
 
 ## What this file is
 
-_TODO: one-paragraph summary of responsibility and boundaries._
+`decoder/orca_whirlpool/proto.go` projects the Orca decoder’s `SwapEvent` struct
+into the repository’s canonical protobuf message (`dex.sol.v1.SwapEvent`).
+
+This is the bridge between “decoder-local types” and “pipeline-wide contracts”.
 
 ## Why this file exists
 
-_TODO: architectural motivation and why this logic lives here (vs elsewhere)._ 
+Downstream publishers and sinks operate on canonical protobuf messages, not on
+decoder-specific structs.
+
+Keeping the projection logic in a dedicated file:
+
+- makes the mapping explicit and reviewable
+- isolates protobuf dependencies from the core decoding types
+- allows the decoder to evolve internally while preserving the pipeline contract
 
 ## Full source
 
@@ -24,22 +34,22 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="package orca_whirlpool" file=<rootDir>/decoder/orca_whirlpool/proto.go#L1-L1 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Declares the Orca Whirlpool decoder package.
 
-**How:** _TODO_
+**How:** This file adds a `ToProto` method on `SwapEvent` for downstream use.
 
-**Why:** _TODO_
+**Why:** A method-based conversion keeps call sites concise and makes it easy to keep decoder output consistent.
 
 ### imports
 
 ```go title="imports" file=<rootDir>/decoder/orca_whirlpool/proto.go#L3-L3 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Canonical protobuf contract for swap events.
 
-**How:** _TODO_
+**How:** Imports `dexv1.SwapEvent` from generated protobuf bindings.
 
-**Why:** _TODO_
+**Why:** The rest of the pipeline publishes/consumes protobuf messages; conversion targets that schema.
 
 ### const (solanaChainID)
 
@@ -48,11 +58,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="const (solanaChainID)" file=<rootDir>/decoder/orca_whirlpool/proto.go#L5-L5 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Constant Solana chain ID used in emitted protobuf events.
 
-**How:** _TODO_
+**How:** Written into `dexv1.SwapEvent.ChainId`.
 
-**Why:** _TODO_
+**Why:** Keeps the canonical event contract multi-chain friendly even when focusing on Solana.
 
 ### func (*SwapEvent) ToProto
 
@@ -61,9 +71,17 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*SwapEvent) ToProto" file=<rootDir>/decoder/orca_whirlpool/proto.go#L7-L37 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Converts an Orca `SwapEvent` into the canonical protobuf `dexv1.SwapEvent`.
 
-**How:** _TODO_
+**How:** The method:
 
-**Why:** _TODO_
+- returns `nil` for a nil receiver
+- maps core identifiers:
+  - chain id, slot, signature
+  - program id (`WhirlpoolProgramID`)
+  - pool id and base/quote mint IDs (from `BaseAsset`/`QuoteAsset`)
+- marks the event as `Provisional = true`
 
+Several fields are intentionally left as zero values today (decimals, amounts, sqrt price, reserves) and are expected to be wired in as the canonical decoder integration matures.
+
+**Why:** A stable protobuf message format is required for JetStream publishing and sink ingestion. Even partial mappings are useful to keep integration points consistent while decoder fidelity improves.

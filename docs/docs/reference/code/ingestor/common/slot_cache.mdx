@@ -6,11 +6,26 @@ This page is an **annotated source reference**. Code blocks are imported from th
 
 ## What this file is
 
-_TODO: one-paragraph summary of responsibility and boundaries._
+`ingestor/common/slot_cache.go` defines a small, thread-safe **slot → timestamp cache** abstraction (`SlotTimeCache`) and provides an in-memory implementation (`MemorySlotTimeCache`).
+
+It’s used to attach wall-clock time to slot-based events when the upstream stream provides:
+
+- a reliable **slot number** (always)
+- a **block time** for some update types (e.g. block meta)
+- but not necessarily a timestamp on every derived event we publish (e.g. swap events)
 
 ## Why this file exists
 
-_TODO: architectural motivation and why this logic lives here (vs elsewhere)._ 
+Multiple parts of the pipeline need the same “slot → timestamp” lookup:
+
+- decoders use it to annotate swap events with a best-known timestamp
+- sinks may use it to recover timestamps when events arrive without one
+
+Making this an interface:
+
+- keeps ingestion code decoupled from a specific cache implementation
+- allows future implementations (persistent, bounded LRU, shared across processes)
+- makes replay/backfill logic explicit via a “replay marker” concept
 
 ## Full source
 
@@ -24,22 +39,22 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="package common" file=<rootDir>/ingestor/common/slot_cache.go#L1-L1 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Declares the `common` package for ingestor/shared helpers.
 
-**How:** _TODO_
+**How:** This package is imported by ingest sources (Geyser/Helius) and decoders to share small utilities like caches and canonical conversions.
 
-**Why:** _TODO_
+**Why:** These helpers sit “between” ingest sources and publishers; keeping them in `ingestor/common` prevents duplication and keeps coupling low.
 
 ### imports
 
 ```go title="imports" file=<rootDir>/ingestor/common/slot_cache.go#L3-L7 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Standard library building blocks for error formatting, concurrency, and timestamps.
 
-**How:** _TODO_
+**How:** The in-memory cache uses a `sync.RWMutex` to protect a `map[uint64]time.Time`, and returns human-readable errors via `fmt.Errorf`.
 
-**Why:** _TODO_
+**Why:** The cache is accessed from long-running goroutines; correctness requires concurrency safety.
 
 ### type (SlotTimeCache)
 
@@ -48,11 +63,16 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="type (SlotTimeCache)" file=<rootDir>/ingestor/common/slot_cache.go#L9-L41 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** `SlotTimeCache` is the interface that the rest of the ingestor/decoder code depends on.
 
-**How:** _TODO_
+**How:** It defines:
 
-**Why:** _TODO_
+- basic CRUD (`Get`, `Set`, `Clear`, `Size`)
+- a convenience method for bulk reads (`GetRange`)
+- replay helpers (`SetReplayMarker`, `GetReplayMarker`, `IsReplaySlot`)
+- pruning (`PruneBeforeSlot`) to control memory growth
+
+**Why:** A narrow interface makes it easy to swap implementations and easy to test components that depend on “time for slot”.
 
 ### type (MemorySlotTimeCache)
 
@@ -61,11 +81,14 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="type (MemorySlotTimeCache)" file=<rootDir>/ingestor/common/slot_cache.go#L43-L48 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** `MemorySlotTimeCache` is the simplest `SlotTimeCache` implementation: an in-memory map protected by a RW mutex.
 
-**How:** _TODO_
+**How:** It stores:
 
-**Why:** _TODO_
+- `slots`: `map[uint64]time.Time` of known timestamps
+- `replayMarker`: a slot boundary used to tag “replayed” slots
+
+**Why:** This is fast, dependency-free, and good enough for single-process ingestion in local dev and many deployments.
 
 ### func NewMemorySlotTimeCache
 
@@ -74,11 +97,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func NewMemorySlotTimeCache" file=<rootDir>/ingestor/common/slot_cache.go#L50-L56 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Constructs a new `SlotTimeCache` backed by `MemorySlotTimeCache`.
 
-**How:** _TODO_
+**How:** Allocates an empty map and initializes the replay marker to 0 (“no replay”).
 
-**Why:** _TODO_
+**Why:** Callers often want a ready-to-use cache without caring about the concrete type.
 
 ### func (*MemorySlotTimeCache) Get
 
@@ -87,11 +110,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*MemorySlotTimeCache) Get" file=<rootDir>/ingestor/common/slot_cache.go#L58-L68 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Retrieves a timestamp for a given slot.
 
-**How:** _TODO_
+**How:** Uses a read lock (`RLock`) and returns an error if the slot is not present in the map.
 
-**Why:** _TODO_
+**Why:** Treating “missing slot” as an error makes it explicit when timestamps are unknown; callers can decide how to handle unknown time (e.g. use 0 / omit).
 
 ### func (*MemorySlotTimeCache) Set
 
@@ -100,11 +123,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*MemorySlotTimeCache) Set" file=<rootDir>/ingestor/common/slot_cache.go#L70-L75 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Stores a slot→timestamp mapping.
 
-**How:** _TODO_
+**How:** Uses an exclusive lock (`Lock`) and writes into the map.
 
-**Why:** _TODO_
+**Why:** Updates can occur concurrently with reads from other goroutines; the lock prevents races.
 
 ### func (*MemorySlotTimeCache) GetRange
 
@@ -113,11 +136,15 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*MemorySlotTimeCache) GetRange" file=<rootDir>/ingestor/common/slot_cache.go#L77-L89 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Retrieves all known timestamps for a slot range `[startSlot, endSlot]`.
 
-**How:** _TODO_
+**How:** Iterates slots from `startSlot` through `endSlot` and returns a new map containing only slots that exist in the cache.
 
-**Why:** _TODO_
+**Why:** Useful for small range queries (e.g. building time windows) without requiring callers to issue many `Get` calls.
+
+:::note
+This implementation assumes `startSlot <= endSlot`. Passing an inverted range with unsigned integers can lead to unexpectedly long loops.
+:::
 
 ### func (*MemorySlotTimeCache) SetReplayMarker
 
@@ -126,11 +153,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*MemorySlotTimeCache) SetReplayMarker" file=<rootDir>/ingestor/common/slot_cache.go#L91-L96 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Marks a slot as a replay boundary.
 
-**How:** _TODO_
+**How:** Stores the marker under an exclusive lock.
 
-**Why:** _TODO_
+**Why:** Replay/backfill code can use this to distinguish “live” traffic from “replayed” slots (for example, to tag events or adjust pruning).
 
 ### func (*MemorySlotTimeCache) GetReplayMarker
 
@@ -139,11 +166,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*MemorySlotTimeCache) GetReplayMarker" file=<rootDir>/ingestor/common/slot_cache.go#L98-L103 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Returns the current replay marker.
 
-**How:** _TODO_
+**How:** Reads `replayMarker` under a read lock.
 
-**Why:** _TODO_
+**Why:** Exposes the marker to any component that needs to apply “replay-aware” behavior.
 
 ### func (*MemorySlotTimeCache) IsReplaySlot
 
@@ -152,11 +179,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*MemorySlotTimeCache) IsReplaySlot" file=<rootDir>/ingestor/common/slot_cache.go#L105-L110 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Checks whether a slot is at or after the replay marker.
 
-**How:** _TODO_
+**How:** Returns `true` when `replayMarker > 0` and `slot >= replayMarker`.
 
-**Why:** _TODO_
+**Why:** Makes it easy to conditionally handle reprocessed data without duplicating marker logic at every call site.
 
 ### func (*MemorySlotTimeCache) Clear
 
@@ -165,11 +192,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*MemorySlotTimeCache) Clear" file=<rootDir>/ingestor/common/slot_cache.go#L112-L118 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Clears the cache and resets replay state.
 
-**How:** _TODO_
+**How:** Replaces the slots map with a fresh empty map and sets the replay marker back to 0.
 
-**Why:** _TODO_
+**Why:** Useful for tests and for “hard reset” operations during reconnections or service restarts.
 
 ### func (*MemorySlotTimeCache) Size
 
@@ -178,11 +205,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*MemorySlotTimeCache) Size" file=<rootDir>/ingestor/common/slot_cache.go#L120-L125 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Returns the number of cached slots.
 
-**How:** _TODO_
+**How:** Returns `len(c.slots)` under a read lock.
 
-**Why:** _TODO_
+**Why:** A cheap health/diagnostics signal (e.g. “is the cache being populated?”).
 
 ### func (*MemorySlotTimeCache) PruneBeforeSlot
 
@@ -191,9 +218,8 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*MemorySlotTimeCache) PruneBeforeSlot" file=<rootDir>/ingestor/common/slot_cache.go#L127-L140 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Deletes cache entries for slots older than a given boundary.
 
-**How:** _TODO_
+**How:** Iterates over the map keys and deletes any slot `< slot`, returning the count pruned.
 
-**Why:** _TODO_
-
+**Why:** Prevents unbounded memory growth in long-running processes.

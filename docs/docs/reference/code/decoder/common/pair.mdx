@@ -6,11 +6,27 @@ This page is an **annotated source reference**. Code blocks are imported from th
 
 ## What this file is
 
-_TODO: one-paragraph summary of responsibility and boundaries._
+`decoder/common/pair.go` implements **canonical pair normalization**:
+
+- chooses a consistent base/quote orientation for two mints
+- provides a `CanonicalPair` struct with symbols and inversion info
+- includes a small registry of known token mints and quote-priority rules
+
+This is used by decoders that want deterministic `base/quote` ordering without
+depending on external token metadata services.
 
 ## Why this file exists
 
-_TODO: architectural motivation and why this logic lives here (vs elsewhere)._ 
+Downstream analytics and storage work best when “the same market” is represented
+one way. Without canonical ordering, you can end up with both:
+
+- `SOL/USDC`
+- `USDC/SOL`
+
+representing the same underlying pool.
+
+This file centralizes ordering rules so all decoders converge on the same pair
+orientation and naming conventions.
 
 ## Full source
 
@@ -24,22 +40,22 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="package common" file=<rootDir>/decoder/common/pair.go#L1-L1 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Declares the `decoder/common` package for shared normalization utilities.
 
-**How:** _TODO_
+**How:** Decoders call `ResolvePair` (and related helpers) when producing canonical swap events and when deriving symbols/metrics.
 
-**Why:** _TODO_
+**Why:** Canonical ordering must be consistent across all decoders to keep downstream datasets coherent.
 
 ### imports
 
 ```go title="imports" file=<rootDir>/decoder/common/pair.go#L3-L5 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Formatting helper for pair symbol construction and errors.
 
-**How:** _TODO_
+**How:** Uses `fmt` to format error messages and pair symbols like `"SOL/USDC"`.
 
-**Why:** _TODO_
+**Why:** Pair normalization is a small utility and should keep dependencies minimal.
 
 ### var (quotePriority)
 
@@ -48,11 +64,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="var (quotePriority)" file=<rootDir>/decoder/common/pair.go#L7-L19 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Priority table describing which tokens are preferred as quote assets.
 
-**How:** _TODO_
+**How:** Higher scores indicate higher preference as quote (second leg) — e.g. USDC outranks SOL.
 
-**Why:** _TODO_
+**Why:** This enforces conventional market notation (e.g. `SOL/USDC` instead of `USDC/SOL`).
 
 ### var (knownTokens)
 
@@ -61,11 +77,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="var (knownTokens)" file=<rootDir>/decoder/common/pair.go#L21-L27 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Registry mapping well-known Solana mint addresses to short symbols.
 
-**How:** _TODO_
+**How:** Used by `resolveTokenSymbol` to label common tokens; unknown mints fall back to a shortened mint prefix.
 
-**Why:** _TODO_
+**Why:** Human-readable symbols improve logs/metrics, and known token mapping avoids relying on external metadata.
 
 ### type (CanonicalPair)
 
@@ -74,11 +90,14 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="type (CanonicalPair)" file=<rootDir>/decoder/common/pair.go#L29-L41 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Represents a normalized base/quote trading pair.
 
-**How:** _TODO_
+**How:** Contains:
 
-**Why:** _TODO_
+- base/quote symbols and mint addresses
+- `Inverted` flag indicating whether the input order had to be swapped to reach canonical orientation
+
+**Why:** Many decoders start from a pool’s “mint A / mint B” order, which may not match canonical market notation. The `Inverted` flag makes it explicit when a swap/flip occurred.
 
 ### func ResolvePair
 
@@ -87,11 +106,19 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func ResolvePair" file=<rootDir>/decoder/common/pair.go#L43-L97 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Computes the canonical base/quote ordering for two mint addresses.
 
-**How:** _TODO_
+**How:** The algorithm:
 
-**Why:** _TODO_
+1. Validates inputs are non-empty.
+2. Resolves “symbols” using `knownTokens` (or mint prefix for unknown tokens).
+3. Looks up quote priorities for both symbols.
+4. Chooses ordering:
+   - if priorities tie: sort by mint lexicographic order
+   - otherwise: higher-priority token becomes the quote leg
+5. Returns a `CanonicalPair` including whether the order was inverted.
+
+**Why:** Deterministic, shared ordering rules prevent the same market from being represented two different ways in storage and analytics.
 
 ### func resolveTokenSymbol
 
@@ -100,11 +127,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func resolveTokenSymbol" file=<rootDir>/decoder/common/pair.go#L99-L109 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Maps a mint address to a human-friendly symbol string.
 
-**How:** _TODO_
+**How:** Returns a known symbol when the mint is in `knownTokens`; otherwise returns a short mint prefix (first 8 chars) as an identifier.
 
-**Why:** _TODO_
+**Why:** Not all tokens are registered. Returning a stable short identifier keeps logs/metrics usable without requiring external metadata.
 
 ### func getQuotePriority
 
@@ -113,11 +140,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func getQuotePriority" file=<rootDir>/decoder/common/pair.go#L111-L117 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Returns the quote priority score for a symbol.
 
-**How:** _TODO_
+**How:** Looks up the score in `quotePriority` and falls back to `"default"`.
 
-**Why:** _TODO_
+**Why:** Centralizes priority fallback behavior so pair resolution stays consistent.
 
 ### func (*CanonicalPair) Symbol
 
@@ -126,11 +153,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*CanonicalPair) Symbol" file=<rootDir>/decoder/common/pair.go#L119-L122 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Returns a human-readable symbol like `"SOL/USDC"`.
 
-**How:** _TODO_
+**How:** Formats `BaseToken` and `QuoteToken` with a `/` separator.
 
-**Why:** _TODO_
+**Why:** Useful for logs, dashboards, and quick debugging.
 
 ### func (*CanonicalPair) IsStablecoinPair
 
@@ -139,11 +166,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*CanonicalPair) IsStablecoinPair" file=<rootDir>/decoder/common/pair.go#L124-L135 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Reports whether both legs of the pair are stablecoins.
 
-**How:** _TODO_
+**How:** Uses a small hard-coded stablecoin set and checks both base and quote symbols.
 
-**Why:** _TODO_
+**Why:** Stable/stable pairs may be treated differently in analytics (e.g. lower volatility expectations, different alert thresholds).
 
 ### func RegisterToken
 
@@ -152,11 +179,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func RegisterToken" file=<rootDir>/decoder/common/pair.go#L137-L141 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Adds or updates a token symbol mapping at runtime.
 
-**How:** _TODO_
+**How:** Mutates the `knownTokens` map.
 
-**Why:** _TODO_
+**Why:** Allows tests or runtime systems to extend the known-token registry without editing source code.
 
 ### func SetQuotePriority
 
@@ -165,9 +192,8 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func SetQuotePriority" file=<rootDir>/decoder/common/pair.go#L143-L147 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Sets or overrides the quote priority score for a symbol.
 
-**How:** _TODO_
+**How:** Mutates the `quotePriority` map.
 
-**Why:** _TODO_
-
+**Why:** Pair orientation conventions can evolve; making the table configurable keeps the normalization logic adaptable.

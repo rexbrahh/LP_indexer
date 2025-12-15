@@ -6,11 +6,23 @@ This page is an **annotated source reference**. Code blocks are imported from th
 
 ## What this file is
 
-_TODO: one-paragraph summary of responsibility and boundaries._
+`decoder/common/fixed_point.go` contains numeric helpers used by CLMM decoders:
+
+- Q64.64 fixed-point conversions for sqrt prices
+- tick ↔ sqrt price conversions (using the `1.0001` tick base)
+- token amount scaling/unscaling by decimals
+- simple spot-price computation from swap amounts
 
 ## Why this file exists
 
-_TODO: architectural motivation and why this logic lives here (vs elsewhere)._ 
+Several DEXes in this repo (Raydium CLMM, Orca Whirlpools) represent prices as
+sqrt prices in Q64.64 fixed-point format.
+
+Centralizing conversions:
+
+- prevents each decoder from re-implementing tricky numeric logic
+- makes it easier to audit correctness and precision tradeoffs
+- standardizes how we derive float prices/volumes for analytics and debugging
 
 ## Full source
 
@@ -24,22 +36,22 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="package common" file=<rootDir>/decoder/common/fixed_point.go#L1-L1 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Declares the `decoder/common` helper package.
 
-**How:** _TODO_
+**How:** Decoder implementations import this package for shared math and normalization logic.
 
-**Why:** _TODO_
+**Why:** Keeping shared numeric utilities in one place reduces duplication and improves consistency across decoders.
 
 ### imports
 
 ```go title="imports" file=<rootDir>/decoder/common/fixed_point.go#L3-L7 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Dependencies for fixed-point arithmetic and floating point math.
 
-**How:** _TODO_
+**How:** `math/big` is used for 128-bit-ish fixed-point operations; `math` provides sqrt/pow/log helpers; `fmt` formats parse errors.
 
-**Why:** _TODO_
+**Why:** CLMM price representations often exceed native integer widths; big integers avoid overflow when parsing and scaling.
 
 ### const (Q64Shift)
 
@@ -48,11 +60,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="const (Q64Shift)" file=<rootDir>/decoder/common/fixed_point.go#L9-L13 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Bit-width of the fractional component in Q64.64 numbers.
 
-**How:** _TODO_
+**How:** Q64.64 encodes values as `integer << 64 + fractional`, so scaling by `2^64` is the core operation.
 
-**Why:** _TODO_
+**Why:** Having this as a named constant keeps conversions self-documenting.
 
 ### var (Q64One)
 
@@ -61,11 +73,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="var (Q64One)" file=<rootDir>/decoder/common/fixed_point.go#L15-L17 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** `Q64One` represents `1 << 64` as a `big.Int`.
 
-**How:** _TODO_
+**How:** Created via `big.NewInt(1)` shifted left by `Q64Shift`.
 
-**Why:** _TODO_
+**Why:** Used as a divisor/multiplier when converting between Q64.64 integer representations and real values.
 
 ### func SqrtPriceQ64ToFloat
 
@@ -74,11 +86,17 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func SqrtPriceQ64ToFloat" file=<rootDir>/decoder/common/fixed_point.go#L19-L41 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Converts a Q64.64 sqrt price (encoded as a decimal string) into a float64 price.
 
-**How:** _TODO_
+**How:**
 
-**Why:** _TODO_
+1. Parses the string into a `big.Int` (base 10).
+2. Converts to `big.Float` for division.
+3. Divides by `2^64` to obtain the real-valued sqrt price.
+4. Squares the result to get price: `price = (sqrtPrice / 2^64)^2`.
+5. Converts to `float64`.
+
+**Why:** CLMM state typically stores sqrt price. Squaring after scaling yields a conventional spot price useful for logs, dashboards, and downstream derivations.
 
 ### func FloatToSqrtPriceQ64
 
@@ -87,11 +105,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func FloatToSqrtPriceQ64" file=<rootDir>/decoder/common/fixed_point.go#L43-L58 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Converts a float64 price into a Q64.64 sqrt price string.
 
-**How:** _TODO_
+**How:** Computes `sqrt(price) * 2^64`, converts the result to an integer (`big.Int`), and returns its decimal string form.
 
-**Why:** _TODO_
+**Why:** Useful for tests, fixtures, and for “round-tripping” between human-friendly prices and on-chain representations.
 
 ### func TickIndexToSqrtPrice
 
@@ -100,11 +118,15 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func TickIndexToSqrtPrice" file=<rootDir>/decoder/common/fixed_point.go#L60-L79 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Converts a tick index to a Q64.64 sqrt price string.
 
-**How:** _TODO_
+**How:** Uses the standard CLMM tick base `1.0001` and computes:
 
-**Why:** _TODO_
+`sqrt_price = 1.0001^(tick/2) * 2^64`
+
+The implementation uses float math (`math.Pow`) and then scales into Q64.64.
+
+**Why:** Tick indices are a common CLMM representation; this helper makes it easy to derive comparable sqrt prices across systems.
 
 ### func SqrtPriceToTickIndex
 
@@ -113,11 +135,13 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func SqrtPriceToTickIndex" file=<rootDir>/decoder/common/fixed_point.go#L81-L103 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Converts a Q64.64 sqrt price string into the nearest tick index.
 
-**How:** _TODO_
+**How:** Parses and scales the sqrt price back to a real number, then computes:
 
-**Why:** _TODO_
+`tick = floor( ln(sqrt_price) / ln(1.0001) * 2 )`
+
+**Why:** Some analytics want tick-space representations (e.g. for liquidity distribution) rather than raw sqrt price values.
 
 ### func ScaleAmount
 
@@ -126,11 +150,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func ScaleAmount" file=<rootDir>/decoder/common/fixed_point.go#L105-L109 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Scales a raw integer token amount into “human units” using decimals.
 
-**How:** _TODO_
+**How:** Divides by `10^decimals`.
 
-**Why:** _TODO_
+**Why:** Prices/volumes are easier to interpret and compare when amounts are expressed in natural units instead of raw integer base units.
 
 ### func UnscaleAmount
 
@@ -139,11 +163,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func UnscaleAmount" file=<rootDir>/decoder/common/fixed_point.go#L111-L115 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Converts a scaled float amount back into raw token units.
 
-**How:** _TODO_
+**How:** Multiplies by `10^decimals` and casts to `uint64` (truncating any fractional remainder).
 
-**Why:** _TODO_
+**Why:** Useful for tests and for converting derived values back into integer form when needed.
 
 ### func CalculatePriceFromAmounts
 
@@ -152,9 +176,8 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func CalculatePriceFromAmounts" file=<rootDir>/decoder/common/fixed_point.go#L117-L128 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Computes an effective quote/base price from swap amounts and decimals.
 
-**How:** _TODO_
+**How:** Scales the raw amounts and returns `scaledB / scaledA`. Returns 0 when `amountA` is zero.
 
-**Why:** _TODO_
-
+**Why:** Sometimes the most reliable price signal is the observed swap exchange rate rather than a pool’s reported sqrt price.

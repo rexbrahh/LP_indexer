@@ -6,11 +6,27 @@ This page is an **annotated source reference**. Code blocks are imported from th
 
 ## What this file is
 
-_TODO: one-paragraph summary of responsibility and boundaries._
+`decoder/orca_whirlpool/types.go` defines the data model used by the Orca
+Whirlpool decoder:
+
+- program constants (program ID and swap instruction discriminator)
+- typed representations of swap instructions and swap events
+- typed snapshots of Whirlpool account state (sqrt price, tick, liquidity, fee rates)
+- supporting structures for tick arrays and post-swap updates
 
 ## Why this file exists
 
-_TODO: architectural motivation and why this logic lives here (vs elsewhere)._ 
+Orca Whirlpool decoding involves multiple pieces of state:
+
+- the instruction payload (amounts, direction flags)
+- pool state before/after (sqrt price, tick index, liquidity, fee rates)
+- derived/normalized outputs (canonical base/quote, price, volumes)
+
+Keeping these structures in one file:
+
+- makes the decoder implementation clearer and less error-prone
+- provides stable JSON-friendly types for tests and debugging
+- keeps the “schema” for Orca decoding reviewable in a single location
 
 ## Full source
 
@@ -24,22 +40,22 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="package orca_whirlpool" file=<rootDir>/decoder/orca_whirlpool/types.go#L1-L1 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Declares the Orca Whirlpool decoder package.
 
-**How:** _TODO_
+**How:** Decoder code (`decoder.go`) and protobuf projection (`proto.go`) use these structs as their shared model.
 
-**Why:** _TODO_
+**Why:** Centralizing types avoids circular dependencies and keeps the decoder’s public surface stable.
 
 ### imports
 
 ```go title="imports" file=<rootDir>/decoder/orca_whirlpool/types.go#L3-L5 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Time utilities for timestamped swap events.
 
-**How:** _TODO_
+**How:** `time.Time` is used for `SwapEvent.Timestamp`.
 
-**Why:** _TODO_
+**Why:** Swap events are consumed downstream in time-series analytics; explicit timestamps are useful even when the upstream is slot-based.
 
 ### const (SwapInstructionDiscriminator, WhirlpoolProgramID)
 
@@ -48,11 +64,14 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="const (SwapInstructionDiscriminator, WhirlpoolProgramID)" file=<rootDir>/decoder/orca_whirlpool/types.go#L7-L13 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Orca Whirlpool program constants.
 
-**How:** _TODO_
+**How:**
 
-**Why:** _TODO_
+- `WhirlpoolProgramID` identifies Orca Whirlpools on Solana.
+- `SwapInstructionDiscriminator` is the 8-byte discriminator used to identify swap instructions (read as a `uint64` in little-endian order).
+
+**Why:** Decoders need stable identifiers to route and validate instruction decoding.
 
 ### type (SwapEvent)
 
@@ -61,11 +80,19 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="type (SwapEvent)" file=<rootDir>/decoder/orca_whirlpool/types.go#L15-L54 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Normalized swap event emitted by the Orca Whirlpool decoder.
 
-**How:** _TODO_
+**How:** Includes:
 
-**Why:** _TODO_
+- transaction metadata (signature, slot, timestamp)
+- pool/mint identifiers (pool address and mint A/B)
+- swap direction and amounts (`AToB`, `AmountIn`, `AmountOut`)
+- CLMM state before/after (sqrt price, tick index, liquidity)
+- fee fields (`FeeAmount`, `ProtocolFee`)
+- derived analytics fields (price, base/quote volumes)
+- canonical base/quote identifiers (`BaseAsset`, `QuoteAsset`)
+
+**Why:** Downstream systems want one canonical representation of “a swap occurred” regardless of the underlying CLMM mechanics.
 
 ### type (SwapInstruction)
 
@@ -74,11 +101,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="type (SwapInstruction)" file=<rootDir>/decoder/orca_whirlpool/types.go#L56-L63 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Decoded Orca Whirlpool swap instruction payload.
 
-**How:** _TODO_
+**How:** Contains raw amount/threshold fields plus flags describing the swap direction and whether the specified amount is input.
 
-**Why:** _TODO_
+**Why:** Instruction payloads are compact binary blobs; decoding into a struct makes downstream logic readable and testable.
 
 ### type (WhirlpoolState)
 
@@ -87,11 +114,16 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="type (WhirlpoolState)" file=<rootDir>/decoder/orca_whirlpool/types.go#L65-L77 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Snapshot of relevant Whirlpool account state.
 
-**How:** _TODO_
+**How:** Captures:
 
-**Why:** _TODO_
+- mint and vault addresses
+- sqrt price and liquidity values (stored as strings to represent u128-sized values)
+- current tick index
+- fee and protocol fee rates
+
+**Why:** Decoding and enriching swaps often requires pool state, not just instruction bytes. Storing pre/post snapshots enables derived price and fee computations.
 
 ### type (PostSwapUpdate)
 
@@ -100,11 +132,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="type (PostSwapUpdate)" file=<rootDir>/decoder/orca_whirlpool/types.go#L79-L88 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Captures state changes after a swap.
 
-**How:** _TODO_
+**How:** Includes post-swap liquidity, tick index, sqrt price, global fee growth, and protocol fee.
 
-**Why:** _TODO_
+**Why:** Useful for deeper CLMM analytics and for validating decoder correctness against expected state transitions.
 
 ### type (TickArray)
 
@@ -113,11 +145,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="type (TickArray)" file=<rootDir>/decoder/orca_whirlpool/types.go#L90-L94 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Represents a sequence of tick states starting at a particular tick index.
 
-**How:** _TODO_
+**How:** Contains `StartTickIndex` and a slice of `TickData`.
 
-**Why:** _TODO_
+**Why:** Tick arrays are part of CLMM mechanics; representing them explicitly makes it possible to decode/inspect tick-level liquidity and fee growth.
 
 ### type (TickData)
 
@@ -126,9 +158,8 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="type (TickData)" file=<rootDir>/decoder/orca_whirlpool/types.go#L96-L103 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Per-tick liquidity/fee data.
 
-**How:** _TODO_
+**How:** Stores whether the tick is initialized plus liquidity and fee growth values (as strings for large integer widths).
 
-**Why:** _TODO_
-
+**Why:** Tick-level data is used to understand liquidity distribution and fee accrual in CLMM pools.

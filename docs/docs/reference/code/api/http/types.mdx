@@ -6,11 +6,24 @@ This page is an **annotated source reference**. Code blocks are imported from th
 
 ## What this file is
 
-_TODO: one-paragraph summary of responsibility and boundaries._
+`api/http/types.go` is a small **re-export shim** inside the `main` package.
+
+It aliases the shared API types and helpers from `api/http/types` into the `main` package so other files in `api/http/` can refer to:
+
+- `Candle`, `PoolResponse`, `ErrorResponse`, …
+- `ValidateTimeframe`, `SupportedTimeframes`, …
+
+without importing `github.com/rexbrahh/lp-indexer/api/http/types` directly.
 
 ## Why this file exists
 
-_TODO: architectural motivation and why this logic lives here (vs elsewhere)._ 
+The repo keeps HTTP payload shapes in a dedicated package (`api/http/types`) so they can be shared across servers, clients, and tests.
+
+This file optionally improves ergonomics inside the `main` package:
+
+- handlers spread across multiple files can use short names
+- the `main` package remains decoupled from the concrete import path in most code
+- it’s explicit which types are part of the public HTTP contract
 
 ## Full source
 
@@ -24,22 +37,22 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="package main" file=<rootDir>/api/http/types.go#L1-L1 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Declares `main`, the executable package of the HTTP API server.
 
-**How:** _TODO_
+**How:** This file contributes type aliases and variables to the `main` package namespace.
 
-**Why:** _TODO_
+**Why:** Keeping this as `package main` means other `api/http/*.go` files can use these aliases without additional imports.
 
 ### imports
 
 ```go title="imports" file=<rootDir>/api/http/types.go#L3-L3 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Imports the shared API types package.
 
-**How:** _TODO_
+**How:** The import is aliased as `apitypes` to avoid confusion with the local `types.go` filename and to make it clear which names come from the shared package.
 
-**Why:** _TODO_
+**Why:** Keeping response shapes in `api/http/types` makes them reusable and helps separate “HTTP contract” from “server wiring”.
 
 ### type (Candle, CandlesResponse, ErrorResponse, HealthResponse, PoolResponse)
 
@@ -48,11 +61,15 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="type (Candle, CandlesResponse, ErrorResponse, HealthResponse, PoolResponse)" file=<rootDir>/api/http/types.go#L5-L16 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Type aliases that re-export the shared HTTP response/request shapes into `main`.
 
-**How:** _TODO_
+**How:** Each alias uses the `=` form, e.g. `type Candle = apitypes.Candle`, which means:
 
-**Why:** _TODO_
+- no new type is created
+- `Candle` and `apitypes.Candle` are identical to the compiler (no conversions required)
+- JSON tags and field names remain the single source of truth in the shared package
+
+**Why:** This reduces boilerplate inside the server package while still enforcing a single canonical definition of the HTTP payload contract.
 
 ### var (ErrNotFound, SupportedTimeframes, ValidateTimeframe)
 
@@ -61,9 +78,13 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="var (ErrNotFound, SupportedTimeframes, ValidateTimeframe)" file=<rootDir>/api/http/types.go#L18-L25 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Re-exports the shared error and helper functions into `main`.
 
-**How:** _TODO_
+**How:**
 
-**Why:** _TODO_
+- `ErrNotFound` points at `apitypes.ErrNotFound`.
+- `SupportedTimeframes` and `ValidateTimeframe` are variables that reference the corresponding functions in `apitypes`.
 
+This enables `main`-package code to call `ValidateTimeframe(tf)` without importing `apitypes`.
+
+**Why:** Keeping validation and accepted value lists in a shared package prevents endpoint implementations from drifting (different validators, different accepted timeframes).

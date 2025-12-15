@@ -6,11 +6,26 @@ This page is an **annotated source reference**. Code blocks are imported from th
 
 ## What this file is
 
-_TODO: one-paragraph summary of responsibility and boundaries._
+`sinks/parquet/service.go` implements a **JetStream candle sink** that writes candle events into Parquet files stored in S3-compatible object storage.
+
+At a high level it:
+
+- pull-subscribes to `<subjectRoot>.candle.>` from a configured JetStream stream/consumer
+- decodes protobuf `Candle` messages
+- appends rows into a batching `Writer`
+- periodically flushes buffered rows (cutting/uploading Parquet objects)
 
 ## Why this file exists
 
-_TODO: architectural motivation and why this logic lives here (vs elsewhere)._ 
+This repo publishes derived candles to JetStream so multiple sinks can consume them independently.
+
+Parquet is a good fit when you want:
+
+- compact, columnar storage
+- partitioned object layouts (easy to query in engines like DuckDB/Athena/Spark)
+- append-only uploads to S3/MinIO without maintaining a DB server for this data shape
+
+This service defines the canonical, replayable path: **JetStream candles → Parquet objects**.
 
 ## Full source
 
@@ -24,22 +39,22 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="package parquet" file=<rootDir>/sinks/parquet/service.go#L1-L1 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Declares the parquet sink service implementation.
 
-**How:** _TODO_
+**How:** `cmd/sink/parquet` constructs config via `ServiceConfigFromEnv()`, then runs `NewService(...).Run(ctx)`.
 
-**Why:** _TODO_
+**Why:** Keeping the service loop in-package makes it reusable and testable (instead of embedding everything in a command `main`).
 
 ### imports
 
 ```go title="imports" file=<rootDir>/sinks/parquet/service.go#L3-L16 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Dependencies for JetStream consumption, protobuf decoding, and env parsing helpers.
 
-**How:** _TODO_
+**How:** `nats.PullSubscribe` + `sub.Fetch` implement pull-based consumption; `proto.Unmarshal` decodes `dexv1.Candle`.
 
-**Why:** _TODO_
+**Why:** The service is “fetch → decode → append → flush”; these imports are the pieces required to do that reliably.
 
 ### type (ServiceConfig)
 
@@ -48,11 +63,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="type (ServiceConfig)" file=<rootDir>/sinks/parquet/service.go#L18-L26 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Combined configuration for the parquet sink: JetStream consumer settings plus S3-backed writer settings.
 
-**How:** _TODO_
+**How:** The `Writer Config` field is the same `Config` produced by `sinks/parquet/config.go` (`FromEnv`, `DefaultConfig`).
 
-**Why:** _TODO_
+**Why:** The service needs to know both where to read candles from (JetStream) and where to store them (S3).
 
 ### func (ServiceConfig) Validate
 
@@ -61,11 +76,15 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (ServiceConfig) Validate" file=<rootDir>/sinks/parquet/service.go#L28-L48 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Validates the service config and returns an error describing invalid/missing fields.
 
-**How:** _TODO_
+**How:** Ensures:
 
-**Why:** _TODO_
+- JetStream fields are present (`NATSURL`, `Stream`, `SubjectRoot`, `Consumer`)
+- pull settings are sane (`PullBatch > 0`, `PullTimeout > 0`)
+- writer configuration validates (`c.Writer.Validate()`)
+
+**Why:** Prevents starting a long-running sink that will immediately fail on first fetch/upload due to missing configuration.
 
 ### func ServiceConfigFromEnv
 
@@ -74,11 +93,20 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func ServiceConfigFromEnv" file=<rootDir>/sinks/parquet/service.go#L50-L82 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Loads a `ServiceConfig` from environment variables with sensible defaults.
 
-**How:** _TODO_
+**How:** The function:
 
-**Why:** _TODO_
+1. Applies defaults for JetStream consumption:
+   - `SubjectRoot = "dex.sol"`
+   - `Consumer = "parquet-sink"`
+   - `PullBatch = 256`
+   - `PullTimeout = 500ms`
+2. Applies optional overrides for pull settings (`PARQUET_PULL_BATCH`, `PARQUET_PULL_TIMEOUT_MS`).
+3. Loads the writer config via `FromEnv()` (S3 endpoint/bucket/creds, flush interval, prefix, etc).
+4. Returns `cfg.Validate()` so callers only receive validated configuration.
+
+**Why:** This is the canonical env contract for running the parquet sink in different environments (local MinIO, prod S3, etc.).
 
 ### type (Service)
 
@@ -87,11 +115,16 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="type (Service)" file=<rootDir>/sinks/parquet/service.go#L84-L91 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Long-running JetStream consumer that turns candle events into Parquet objects.
 
-**How:** _TODO_
+**How:** Owns:
 
-**Why:** _TODO_
+- NATS connection + JetStream context
+- a pull subscription for candle subjects
+- a `Writer` instance responsible for buffering and uploading
+- a flush ticker (driven by `Writer.FlushInterval`)
+
+**Why:** The service owns lifecycle (connect, subscribe, flush periodically, drain/close on exit) so the writer can remain focused on file/object creation.
 
 ### func NewService
 
@@ -100,11 +133,18 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func NewService" file=<rootDir>/sinks/parquet/service.go#L93-L125 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Constructs the parquet sink service: initializes the writer and JetStream subscription.
 
-**How:** _TODO_
+**How:** The constructor:
 
-**Why:** _TODO_
+1. Creates a writer via `NewWriter(cfg.Writer)` (may return `ErrWriterDisabled` if config is incomplete).
+2. Connects to NATS and initializes JetStream.
+3. Pull-subscribes to `<SubjectRoot>.candle.>` using:
+   - `nats.BindStream(cfg.Stream)`
+   - `nats.ManualAck()`
+4. Creates a `time.Ticker` using the writer flush interval.
+
+**Why:** Centralizes resource setup and ensures partial failures clean up resources (e.g. closing the NATS connection if subscription fails).
 
 ### func (*Service) Run
 
@@ -113,11 +153,18 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*Service) Run" file=<rootDir>/sinks/parquet/service.go#L127-L159 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Main service loop: fetch candle messages, append to writer, flush periodically, and ack/nak.
 
-**How:** _TODO_
+**How:**
 
-**Why:** _TODO_
+- On each ticker tick: `writer.Flush(ctx)` uploads any buffered Parquet objects.
+- Repeatedly fetches JetStream messages with `Fetch(PullBatch, MaxWait(PullTimeout))`.
+- Treats `nats.ErrTimeout` as “no messages yet”.
+- For each message:
+  - on success: `Ack()`
+  - on failure: `Nak()` and return the error
+
+**Why:** Implements at-least-once ingestion from JetStream into durable S3 objects: only successfully processed messages are acked.
 
 ### func (*Service) handleMessage
 
@@ -126,11 +173,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*Service) handleMessage" file=<rootDir>/sinks/parquet/service.go#L161-L172 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Decodes a candle protobuf from a JetStream message and appends it to the writer.
 
-**How:** _TODO_
+**How:** Validates the subject contains `.candle.`, unmarshals `dexv1.Candle`, then calls `writer.AppendCandle`.
 
-**Why:** _TODO_
+**Why:** Keeps the service loop focused on consumption/acking and isolates decode/append logic in a single function.
 
 ### func valueOrDefault
 
@@ -139,9 +186,8 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func valueOrDefault" file=<rootDir>/sinks/parquet/service.go#L174-L179 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Small helper to apply defaults for optional env vars.
 
-**How:** _TODO_
+**How:** Returns `fallback` when `value` is empty; otherwise returns `value`.
 
-**Why:** _TODO_
-
+**Why:** Keeps config parsing readable and consistent with other sink configs.

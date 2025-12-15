@@ -59,6 +59,7 @@ const sidebars: SidebarsConfig = {
       items: [
         'reference/env',
         'reference/cli',
+        'reference/coverage',
         'reference/legacy-archive',
         {
           type: 'category',

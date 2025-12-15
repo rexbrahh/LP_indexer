@@ -6,11 +6,22 @@ This page is an **annotated source reference**. Code blocks are imported from th
 
 ## What this file is
 
-_TODO: one-paragraph summary of responsibility and boundaries._
+`decoder/meteora/types.go` defines the core data model for Meteora swap decoding:
+
+- known Meteora program IDs and their associated pool “kind” (DLMM vs CPMM)
+- `SwapEvent`: normalized swap data extracted from transactions/logs/balances
+- `InstructionContext`: the ambient transaction metadata required to decode a swap
 
 ## Why this file exists
 
-_TODO: architectural motivation and why this logic lives here (vs elsewhere)._ 
+Meteora has multiple on-chain program IDs and pool variants with different log
+and state semantics.
+
+This file exists to:
+
+- centralize the mapping from program ID → pool kind so decoders can adapt logic
+- provide a stable event structure that can be converted into canonical protobuf messages
+- make the decoder interface explicit: it consumes “instruction + balances + logs + accounts”
 
 ## Full source
 
@@ -24,22 +35,22 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="package meteora" file=<rootDir>/decoder/meteora/types.go#L1-L1 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Declares the Meteora decoder package.
 
-**How:** _TODO_
+**How:** Decoder logic (`decoder.go`) and protobuf projection (`proto.go`) use these types as their shared model.
 
-**Why:** _TODO_
+**Why:** Centralizing types keeps decoder code cohesive and makes it easier to evolve the implementation without changing call sites.
 
 ### imports
 
 ```go title="imports" file=<rootDir>/decoder/meteora/types.go#L3-L7 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Dependencies for timestamps and upstream token balance snapshots.
 
-**How:** _TODO_
+**How:** `time.Time` is used on events/contexts, and Yellowstone `pb.TokenBalance` types represent pre/post token balances.
 
-**Why:** _TODO_
+**Why:** Meteora decoding is balance- and log-driven; the upstream token balance snapshots are a key input to computing swap deltas.
 
 ### var (programKinds)
 
@@ -48,11 +59,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="var (programKinds)" file=<rootDir>/decoder/meteora/types.go#L9-L15 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Mapping of known Meteora program IDs to pool kinds.
 
-**How:** _TODO_
+**How:** The map value is a `PoolKind` (`cpmm` or `dlmm`). The decoder uses it to apply kind-specific logic.
 
-**Why:** _TODO_
+**Why:** Meteora uses multiple program IDs in the wild; knowing the pool kind is necessary to parse logs/reserve fields correctly.
 
 ### func ProgramKindForID
 
@@ -61,11 +72,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func ProgramKindForID" file=<rootDir>/decoder/meteora/types.go#L17-L22 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Looks up the pool kind associated with a Meteora program ID.
 
-**How:** _TODO_
+**How:** Returns `(kind, true)` when the ID is known, otherwise `(zero, false)`.
 
-**Why:** _TODO_
+**Why:** Higher layers use this to decide whether a transaction’s program ID should be decoded as Meteora and which decoding path to use.
 
 ### func SetProgramKind
 
@@ -74,11 +85,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func SetProgramKind" file=<rootDir>/decoder/meteora/types.go#L24-L27 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Overrides or extends the program ID → kind mapping.
 
-**How:** _TODO_
+**How:** Mutates the `programKinds` map.
 
-**Why:** _TODO_
+**Why:** Primarily used by tests/fixtures to register additional IDs without changing production code.
 
 ### type (PoolKind)
 
@@ -87,11 +98,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="type (PoolKind)" file=<rootDir>/decoder/meteora/types.go#L29-L30 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Enumerates Meteora pool flavours.
 
-**How:** _TODO_
+**How:** Defined as a string type with well-known constant values.
 
-**Why:** _TODO_
+**Why:** Pool kind determines log parsing and reserve interpretation.
 
 ### const (PoolKindCPMM, PoolKindDLMM)
 
@@ -100,11 +111,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="const (PoolKindCPMM, PoolKindDLMM)" file=<rootDir>/decoder/meteora/types.go#L32-L37 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Known `PoolKind` values.
 
-**How:** _TODO_
+**How:** `dlmm` for dynamic liquidity pools; `cpmm` for constant product pools.
 
-**Why:** _TODO_
+**Why:** Explicit constants keep kind comparisons consistent across the decoder implementation.
 
 ### type (SwapEvent)
 
@@ -113,11 +124,18 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="type (SwapEvent)" file=<rootDir>/decoder/meteora/types.go#L39-L74 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Normalized swap event extracted from a Meteora swap instruction.
 
-**How:** _TODO_
+**How:** Captures:
 
-**Why:** _TODO_
+- transaction identifiers (signature, slot, timestamp)
+- program/pool identifiers and pool kind
+- base/quote mint IDs and decimals
+- base/quote raw amounts and fee bps
+- optional reserve fields (virtual/real) extracted from logs when available
+- canonical ordering metadata (`MintBase`/`MintQuote`, `BaseDecreased`) used to orient amounts consistently
+
+**Why:** The ingest pipeline ultimately publishes canonical protobuf swap events; this struct is the decoder-local representation that can be converted into that schema.
 
 ### type (InstructionContext)
 
@@ -126,9 +144,14 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="type (InstructionContext)" file=<rootDir>/decoder/meteora/types.go#L76-L90 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Context bundle required to interpret a Meteora swap instruction.
 
-**How:** _TODO_
+**How:** Includes:
 
-**Why:** _TODO_
+- slot + signature + optional timestamp
+- full account key list + instruction account indices
+- pre/post token balance snapshots
+- transaction log messages
+- the concrete program ID and known pool kind
 
+**Why:** Meteora decoding in this repo is “contextual”: it relies on token balance deltas and logs to infer realized swap amounts and optional reserve/fee metadata.

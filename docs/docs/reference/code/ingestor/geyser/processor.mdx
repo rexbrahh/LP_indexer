@@ -6,11 +6,30 @@ This page is an **annotated source reference**. Code blocks are imported from th
 
 ## What this file is
 
-_TODO: one-paragraph summary of responsibility and boundaries._
+`ingestor/geyser/processor.go` is the core “ingest → decode → publish” adapter for
+Yellowstone Geyser updates.
+
+It:
+
+- consumes `pb.SubscribeUpdate` messages from the Geyser client
+- feeds account + block meta into the shared swap decoder
+- decodes swap instructions into canonical protobuf events (`dexv1.SwapEvent`)
+- publishes canonical events to JetStream via a `SwapPublisher`
+- emits “finalize” and “undo” corrections on slot status transitions
+- tracks per-program metrics (swaps + errors)
 
 ## Why this file exists
 
-_TODO: architectural motivation and why this logic lives here (vs elsewhere)._ 
+Geyser provides low-level, transport-specific updates. This processor defines the
+repo’s ingestion semantics:
+
+- which update types are relevant
+- how to translate them into the canonical event model
+- how to handle Solana slot finalization (provisional → finalized or dead/undo)
+
+Keeping this logic centralized makes downstream sinks simpler: sinks can treat
+JetStream as the “source of truth” and rely on correction events to reconcile
+final state.
 
 ## Full source
 
@@ -24,22 +43,28 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="package geyser" file=<rootDir>/ingestor/geyser/processor.go#L1-L1 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Declares the `geyser` ingestion package.
 
-**How:** _TODO_
+**How:** The processor is used by `Service`/`FailoverService` to turn raw Geyser updates into published canonical events.
 
-**Why:** _TODO_
+**Why:** The processor is transport-adjacent (it understands Yellowstone update types) but is still separate from the gRPC client and from sinks.
 
 ### imports
 
 ```go title="imports" file=<rootDir>/ingestor/geyser/processor.go#L3-L21 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Dependencies for decoding, publishing, metrics, and protobuf cloning.
 
-**How:** _TODO_
+**How:**
 
-**Why:** _TODO_
+- `swapdecoder` is the shared “DEX decoding” engine.
+- `common.ConvertTxMeta` creates canonical tx metadata events.
+- `proto.Clone` is used to safely mutate copies when publishing corrections.
+- Prometheus packages register counters for swaps/errors.
+- DEX program packages (`ray`, `orcawhirlpool`, `meteora`) are used for program ID matching in metrics.
+
+**Why:** The processor is the integration point between raw ingest updates, DEX decoding, and JetStream publishing.
 
 ### const (chainIDSolana)
 
@@ -48,11 +73,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="const (chainIDSolana)" file=<rootDir>/ingestor/geyser/processor.go#L23-L23 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Canonical chain identifier for Solana.
 
-**How:** _TODO_
+**How:** Written into `dexv1.BlockHead.ChainId` (and swap events are tagged by the decoder).
 
-**Why:** _TODO_
+**Why:** Downstream schemas are multi-chain friendly; tagging events keeps that contract consistent.
 
 ### type (SwapPublisher)
 
@@ -61,11 +86,15 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="type (SwapPublisher)" file=<rootDir>/ingestor/geyser/processor.go#L25-L30 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Minimal publishing interface required by the processor.
 
-**How:** _TODO_
+**How:** Implemented by the JetStream publisher (`sinks/nats.Publisher`) and used to publish:
 
-**Why:** _TODO_
+- swaps (`PublishSwap`)
+- block heads (`PublishBlockHead`)
+- tx metadata (`PublishTxMeta`)
+
+**Why:** Keeps the processor testable and decoupled from the concrete NATS implementation.
 
 ### type (Processor)
 
@@ -74,11 +103,17 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="type (Processor)" file=<rootDir>/ingestor/geyser/processor.go#L32-L39 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** `Processor` consumes Geyser updates and emits canonical events.
 
-**How:** _TODO_
+**How:** It maintains:
 
-**Why:** _TODO_
+- a `SwapPublisher` for publishing to JetStream
+- a shared `swapdecoder.Decoder` for DEX decoding
+- `pending`: provisional swap events grouped by slot
+- `blockHeads`: latest block head per slot (so status can be updated later)
+- `metrics`: counters for observability
+
+**Why:** Solana finality is not immediate. Publishing a provisional event now and a correction later (finalize/undo) gives consumers a consistent reconciliation mechanism.
 
 ### func NewProcessor
 
@@ -87,11 +122,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func NewProcessor" file=<rootDir>/ingestor/geyser/processor.go#L41-L50 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Constructs a processor with an optional shared slot cache and optional metrics registration.
 
-**How:** _TODO_
+**How:** Creates a `swapdecoder.Decoder` (sharing the provided cache), registers metrics (or uses a local registry when nil), and initializes the internal maps.
 
-**Why:** _TODO_
+**Why:** Sharing the slot cache improves timestamp consistency across events and keeps state centralized.
 
 ### func (*Processor) HandleUpdate
 
@@ -100,11 +135,18 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*Processor) HandleUpdate" file=<rootDir>/ingestor/geyser/processor.go#L52-L69 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Routes an incoming Yellowstone `SubscribeUpdate` to the appropriate handler.
 
-**How:** _TODO_
+**How:** Switches on the update oneof:
 
-**Why:** _TODO_
+- transactions → `handleTransaction`
+- block meta → `handleBlockMeta`
+- account updates → `handleAccount`
+- slot status updates → `handleSlot`
+
+All other update types are ignored.
+
+**Why:** Different update kinds contribute different pieces of the canonical event model (balances/fees, timestamps, finality).
 
 ### func (*Processor) handleTransaction
 
@@ -113,11 +155,19 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*Processor) handleTransaction" file=<rootDir>/ingestor/geyser/processor.go#L71-L100 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Decodes swap events from a transaction update and publishes them to JetStream.
 
-**How:** _TODO_
+**How:** The handler:
 
-**Why:** _TODO_
+1. Calls `decoder.DecodeTransaction(tx)` to get swap events.
+2. If decoding fails with `*swapdecoder.DecodeError`, records an error metric for that program.
+3. Builds and publishes a canonical `TxMeta` via `common.ConvertTxMeta(tx)` (when present).
+4. For each decoded swap:
+   - records a swap metric by program
+   - publishes the provisional swap immediately
+   - stores a clone in `pending[slot]` so it can be finalized or undone later
+
+**Why:** Provisional-first publishing reduces latency for consumers, while keeping enough state to reconcile finality when slot status updates arrive.
 
 ### func (*Processor) handleBlockMeta
 
@@ -126,11 +176,17 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*Processor) handleBlockMeta" file=<rootDir>/ingestor/geyser/processor.go#L102-L118 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Updates timestamp cache and publishes an initial block head for the slot.
 
-**How:** _TODO_
+**How:** The handler:
 
-**Why:** _TODO_
+- calls `decoder.HandleBlockMeta(meta)` so swap decoding can lookup slot timestamps
+- constructs a `dexv1.BlockHead` with:
+  - `Status = "confirmed"`
+  - `TsSec` when block time is available
+- stores the head in `blockHeads[slot]` and publishes a cloned copy
+
+**Why:** Consumers use block heads to map slot → time and to reason about slot finality without having to decode raw block meta themselves.
 
 ### func (*Processor) handleAccount
 
@@ -139,11 +195,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*Processor) handleAccount" file=<rootDir>/ingestor/geyser/processor.go#L120-L122 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Feeds account updates into the swap decoder.
 
-**How:** _TODO_
+**How:** Delegates directly to `decoder.HandleAccount(account)`.
 
-**Why:** _TODO_
+**Why:** Account updates are how the decoder learns pool configuration and fee rates needed for accurate swap decoding.
 
 ### func (*Processor) handleSlot
 
@@ -152,11 +208,20 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*Processor) handleSlot" file=<rootDir>/ingestor/geyser/processor.go#L124-L143 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Handles Solana slot status transitions (finalized/dead).
 
-**How:** _TODO_
+**How:** For the slot in the update:
 
-**Why:** _TODO_
+- `SLOT_FINALIZED`:
+  - publishes finalized swap corrections via `finalizeSlot`
+  - updates/publishes the block head status to `"finalized"`
+- `SLOT_DEAD`:
+  - publishes undo corrections via `undoSlot`
+  - updates/publishes the block head status to `"dead"`
+
+All other statuses are ignored.
+
+**Why:** This is where the pipeline reconciles provisional events with finality. Downstream sinks can model “final truth” by applying finalize/undo events by key.
 
 ### func (*Processor) finalizeSlot
 
@@ -165,11 +230,17 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*Processor) finalizeSlot" file=<rootDir>/ingestor/geyser/processor.go#L145-L162 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Publishes “finalized” versions of all provisional swaps recorded for a slot.
 
-**How:** _TODO_
+**How:** For every pending swap in `pending[slot]`:
 
-**Why:** _TODO_
+- clones the event (`proto.Clone`)
+- sets `Provisional = false` and `IsUndo = false`
+- publishes it as a new event
+
+After publishing, the slot’s pending list is deleted.
+
+**Why:** A finalized correction lets sinks mark a previously provisional record as final without reprocessing raw chain data.
 
 ### func (*Processor) undoSlot
 
@@ -178,11 +249,17 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*Processor) undoSlot" file=<rootDir>/ingestor/geyser/processor.go#L164-L181 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Publishes “undo” corrections for all provisional swaps recorded for a dead slot.
 
-**How:** _TODO_
+**How:** For every pending swap:
 
-**Why:** _TODO_
+- clones the event
+- sets `Provisional = false` and `IsUndo = true`
+- publishes it
+
+Then removes the pending list.
+
+**Why:** Dead slots can contain swaps that should be removed from “final” analytics. Publishing explicit undo events allows sinks to correct materializations deterministically.
 
 ### func (*Processor) publishBlockHeadStatus
 
@@ -191,11 +268,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*Processor) publishBlockHeadStatus" file=<rootDir>/ingestor/geyser/processor.go#L183-L198 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Updates and republishes a block head with a new status for a slot.
 
-**How:** _TODO_
+**How:** Looks up the head in `blockHeads`, clones it, sets `Status`, and publishes it. If the status is terminal (`"finalized"` or `"dead"`), it removes the head from the map.
 
-**Why:** _TODO_
+**Why:** Block head status is the canonical “finality signal” downstream. Republishing on transitions keeps consumers stateless.
 
 ### func (*Processor) appendPending
 
@@ -204,11 +281,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*Processor) appendPending" file=<rootDir>/ingestor/geyser/processor.go#L200-L206 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Records a provisional swap for later finalization/undo.
 
-**How:** _TODO_
+**How:** Clones the event and appends it to `pending[slot]`.
 
-**Why:** _TODO_
+**Why:** Keeping a copy avoids mutating published events and ensures the processor has the data required to publish corrections when slot status changes arrive.
 
 ### type (processorMetrics)
 
@@ -217,11 +294,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="type (processorMetrics)" file=<rootDir>/ingestor/geyser/processor.go#L208-L215 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Holds per-program Prometheus counters for swaps and errors.
 
-**How:** _TODO_
+**How:** Maintains separate counters for Raydium, Orca, and Meteora swaps/errors.
 
-**Why:** _TODO_
+**Why:** Per-program visibility is critical in DEX decoding pipelines: a decoder regression or upstream format change usually affects one program first.
 
 ### func newProcessorMetrics
 
@@ -230,11 +307,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func newProcessorMetrics" file=<rootDir>/ingestor/geyser/processor.go#L217-L259 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Registers and returns the processor metrics struct.
 
-**How:** _TODO_
+**How:** Uses `promauto.With(reg)` to create counters in the provided registry. Metric names are sourced from `observability` constants.
 
-**Why:** _TODO_
+**Why:** Allowing an injected registry makes it easy to expose metrics via the service’s Prometheus endpoint (and to isolate metrics in tests).
 
 ### func (*processorMetrics) recordSwap
 
@@ -243,11 +320,15 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*processorMetrics) recordSwap" file=<rootDir>/ingestor/geyser/processor.go#L261-L275 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Records a successful decoded/published swap by program.
 
-**How:** _TODO_
+**How:** Matches on program ID:
 
-**Why:** _TODO_
+- Raydium program → increment Raydium swaps
+- Orca Whirlpool program → increment Orca swaps
+- Meteora programs → detected via `meteora.ProgramKindForID(programID)`
+
+**Why:** Swap volumes are a primary “is ingestion healthy?” signal and help identify skew across supported DEXes.
 
 ### func (*processorMetrics) recordError
 
@@ -256,9 +337,8 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*processorMetrics) recordError" file=<rootDir>/ingestor/geyser/processor.go#L277-L291 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Records a decode/publish error by program.
 
-**How:** _TODO_
+**How:** Uses the same program-ID matching strategy as `recordSwap`, incrementing the corresponding error counter.
 
-**Why:** _TODO_
-
+**Why:** Error spikes on a single program often indicate a decoder bug or an upstream program upgrade; separating counters makes alerting and triage easier.

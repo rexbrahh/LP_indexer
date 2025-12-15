@@ -6,11 +6,25 @@ This page is an **annotated source reference**. Code blocks are imported from th
 
 ## What this file is
 
-_TODO: one-paragraph summary of responsibility and boundaries._
+`bridge/config.go` defines the runtime configuration contract for the **JetStream bridge** service.
+
+It answers four operational questions:
+
+- What JetStream cluster/endpoint do we **read** from? (`SourceURL`, `SourceStream`)
+- What JetStream cluster/endpoint do we **write** to? (`TargetURL`, `TargetStream`)
+- Do we rewrite or drop any subjects during forwarding? (`SubjectMappings`)
+- Where (if anywhere) should the bridge expose Prometheus metrics? (`MetricsAddr`)
 
 ## Why this file exists
 
-_TODO: architectural motivation and why this logic lives here (vs elsewhere)._ 
+The bridge is “cutover glue”: it exists to keep legacy consumers working while the canonical pipeline is introduced.
+That makes configuration stability and validation more important than feature richness.
+
+Keeping env var names + validation in one place:
+
+- prevents drift between the `cmd/bridge` binary and the `bridge` package
+- makes failures happen at startup (missing URLs/streams), not mid-run
+- keeps the `bridge.Service` constructor testable without depending on process env
 
 ## Full source
 
@@ -24,22 +38,22 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="package bridge" file=<rootDir>/bridge/config.go#L1-L1 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Declares the `bridge` package for the bridge service, mapping helpers, and configuration types.
 
-**How:** _TODO_
+**How:** Other packages (notably `cmd/bridge`) import `bridge` to load config (`FromEnv`) and construct/run the bridge service.
 
-**Why:** _TODO_
+**Why:** The bridge is a first-class runtime component in the ingest→publish flow, so keeping its core building blocks in a dedicated package simplifies wiring and reuse.
 
 ### imports
 
 ```go title="imports" file=<rootDir>/bridge/config.go#L3-L6 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Standard library dependencies for config loading and error formatting.
 
-**How:** _TODO_
+**How:** `os.Getenv` reads env vars; `fmt.Errorf` produces human-friendly validation/parsing errors.
 
-**Why:** _TODO_
+**Why:** Configuration should stay dependency-light so it can be imported by any binary without pulling in extra runtime dependencies.
 
 ### const (envMetricsAddr, envSourceStream, envSourceURL, envSubjectMapPath, envTargetStream, envTargetURL)
 
@@ -48,11 +62,16 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="const (envMetricsAddr, envSourceStream, envSourceURL, envSubjectMapPath, envTargetStream, envTargetURL)" file=<rootDir>/bridge/config.go#L8-L15 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Canonical environment variable names for configuring the bridge process.
 
-**How:** _TODO_
+**How:** `FromEnv()` reads these variables and maps them into a `Config` struct:
 
-**Why:** _TODO_
+- `BRIDGE_SOURCE_NATS_URL` / `BRIDGE_TARGET_NATS_URL`: NATS endpoints to connect to.
+- `BRIDGE_SOURCE_STREAM` / `BRIDGE_TARGET_STREAM`: JetStream stream names.
+- `BRIDGE_SUBJECT_MAP_PATH`: optional YAML file describing subject rewrite/drop rules.
+- `BRIDGE_METRICS_ADDR`: optional metrics bind address (e.g. `:9090`).
+
+**Why:** Env vars are the operational API for containers and job runners; defining them once prevents “same concept, different name” drift.
 
 ### type (Config)
 
@@ -61,11 +80,17 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="type (Config)" file=<rootDir>/bridge/config.go#L17-L25 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** In-memory configuration for a running bridge instance.
 
-**How:** _TODO_
+**How:** The `cmd/bridge` entrypoint typically does:
 
-**Why:** _TODO_
+1. `cfg, err := bridge.FromEnv()`
+2. `svc, err := bridge.New(cfg, ...)`
+3. `svc.Run(ctx)`
+
+The `SubjectMappings` field is populated from the YAML mapping file when provided.
+
+**Why:** Separating “configuration shape” from “environment loading” keeps the service constructor clean and makes it straightforward to inject config from tests or other orchestration code.
 
 ### func (Config) Validate
 
@@ -74,11 +99,16 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (Config) Validate" file=<rootDir>/bridge/config.go#L27-L42 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Validates that the bridge has enough information to connect and forward messages safely.
 
-**How:** _TODO_
+**How:** It enforces that:
 
-**Why:** _TODO_
+- source URL + stream are present (otherwise you can’t subscribe)
+- target URL + stream are present (otherwise you can’t publish)
+
+Optional settings (`SubjectMappings`, `MetricsAddr`) are allowed to be empty.
+
+**Why:** Failing fast with an explicit error (“target stream is required”) is substantially easier to operate than discovering config problems only after goroutines and subscriptions have started.
 
 ### func FromEnv
 
@@ -87,9 +117,12 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func FromEnv" file=<rootDir>/bridge/config.go#L44-L61 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Loads a validated bridge `Config` from the process environment.
 
-**How:** _TODO_
+**How:** The function:
 
-**Why:** _TODO_
+1. Reads connection/stream settings from env vars.
+2. If `BRIDGE_SUBJECT_MAP_PATH` is set, parses the YAML file via `LoadSubjectMappings`.
+3. Runs `cfg.Validate()` so callers always receive a usable config.
 
+**Why:** This provides a single, stable entrypoint for “how to configure the bridge” across all deploy environments and keeps the bridge’s operational surface self-documenting.

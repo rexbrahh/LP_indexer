@@ -6,11 +6,26 @@ This page is an **annotated source reference**. Code blocks are imported from th
 
 ## What this file is
 
-_TODO: one-paragraph summary of responsibility and boundaries._
+`ingestor/internal/pools/raydium.go` contains low-level byte parsing helpers for
+Raydium CLMM on-chain accounts.
+
+It provides:
+
+- Anchor discriminator checks for pool state and `AmmConfig` accounts
+- fixed offsets/length checks to extract:
+  - the `amm_config` pubkey from a pool account
+  - the trade fee rate from an `AmmConfig` account
 
 ## Why this file exists
 
-_TODO: architectural motivation and why this logic lives here (vs elsewhere)._ 
+Raydium swap decoding needs fee rate information, but the fee is stored in a
+separate config account referenced by pool state.
+
+This file exists to:
+
+- keep the “account layout knowledge” in one place
+- avoid depending on heavy Anchor IDL tooling at runtime
+- support the ingest decoder’s account-indexing path (`ingestor/decoder.HandleAccount`)
 
 ## Full source
 
@@ -24,22 +39,22 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="package pools" file=<rootDir>/ingestor/internal/pools/raydium.go#L1-L1 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Declares the `pools` internal helper package.
 
-**How:** _TODO_
+**How:** The ingest decoder uses these functions to interpret raw account bytes from `SubscribeUpdateAccount` messages.
 
-**Why:** _TODO_
+**Why:** Pool/config account parsing is DEX-specific and should not leak into the generic decoder orchestration code.
 
 ### imports
 
 ```go title="imports" file=<rootDir>/ingestor/internal/pools/raydium.go#L3-L6 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Dependencies for byte parsing and error reporting.
 
-**How:** _TODO_
+**How:** `encoding/binary` reads little-endian integers from account bytes; `fmt` formats descriptive errors.
 
-**Why:** _TODO_
+**Why:** These helpers are intentionally “low-level” and keep dependencies minimal.
 
 ### const (ApproxConfigAccountMax, ammHeaderLen, ammRequiredLength, ammTradeFeeOffset, poolConfigEnd, poolConfigOffset, poolHeaderLen)
 
@@ -48,11 +63,16 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="const (ApproxConfigAccountMax, ammHeaderLen, ammRequiredLength, ammTradeFeeOffset, poolConfigEnd, poolConfigOffset, poolHeaderLen)" file=<rootDir>/ingestor/internal/pools/raydium.go#L8-L16 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Hard-coded offsets and lengths for Raydium account layouts.
 
-**How:** _TODO_
+**How:** These constants define:
 
-**Why:** _TODO_
+- where the `amm_config` pubkey lives inside a pool account (`poolConfigOffset..poolConfigEnd`)
+- where the trade fee rate lives inside an `AmmConfig` account (`ammTradeFeeOffset`)
+- minimum byte lengths required for safe parsing (`ammRequiredLength`, `poolConfigEnd`)
+- a heuristic size limit used by higher-level code (`ApproxConfigAccountMax`)
+
+**Why:** Parsing is done by slicing raw bytes. Explicit offsets + bounds checks prevent panics and make layout assumptions reviewable.
 
 ### var (ammConfigDiscriminator, poolStateDiscriminator)
 
@@ -61,11 +81,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="var (ammConfigDiscriminator, poolStateDiscriminator)" file=<rootDir>/ingestor/internal/pools/raydium.go#L18-L21 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Anchor discriminators for Raydium account types.
 
-**How:** _TODO_
+**How:** These 8-byte sequences are compared against the first 8 bytes of account data to identify account layout.
 
-**Why:** _TODO_
+**Why:** Discriminator checks are the safest “first gate” before applying fixed offsets to parse account state.
 
 ### func HasAmmConfigDiscriminator
 
@@ -74,11 +94,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func HasAmmConfigDiscriminator" file=<rootDir>/ingestor/internal/pools/raydium.go#L23-L25 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Returns true when the account data matches the `AmmConfig` discriminator.
 
-**How:** _TODO_
+**How:** Checks `len(data) >= 8` and compares the first 8 bytes using `equalDiscriminator`.
 
-**Why:** _TODO_
+**Why:** Higher-level code uses this to decide whether it can safely parse fee configuration from the account bytes.
 
 ### func HasPoolDiscriminator
 
@@ -87,11 +107,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func HasPoolDiscriminator" file=<rootDir>/ingestor/internal/pools/raydium.go#L27-L29 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Returns true when the account data matches the pool state discriminator.
 
-**How:** _TODO_
+**How:** Same pattern as `HasAmmConfigDiscriminator`, but against the pool state discriminator bytes.
 
-**Why:** _TODO_
+**Why:** Allows the decoder to safely extract the referenced `amm_config` pubkey from pool state accounts.
 
 ### func equalDiscriminator
 
@@ -100,11 +120,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func equalDiscriminator" file=<rootDir>/ingestor/internal/pools/raydium.go#L31-L41 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Compares two discriminator byte slices for equality.
 
-**How:** _TODO_
+**How:** Returns false when lengths differ; otherwise compares each byte sequentially.
 
-**Why:** _TODO_
+**Why:** Avoids pulling in additional dependencies; discriminator comparisons are tiny and performance-sensitive in high-throughput account streams.
 
 ### func DecodeRaydiumPool
 
@@ -113,11 +133,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func DecodeRaydiumPool" file=<rootDir>/ingestor/internal/pools/raydium.go#L43-L49 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Extracts the `amm_config` pubkey bytes from a Raydium CLMM pool account.
 
-**How:** _TODO_
+**How:** Validates the account is at least `poolConfigEnd` bytes, then returns `data[poolConfigOffset:poolConfigEnd]` (32 bytes).
 
-**Why:** _TODO_
+**Why:** The ingest decoder uses this pubkey to look up the `AmmConfig` account and map pools to their fee rate.
 
 ### func DecodeAmmConfig
 
@@ -126,9 +146,10 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func DecodeAmmConfig" file=<rootDir>/ingestor/internal/pools/raydium.go#L51-L58 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Parses the Raydium `AmmConfig` account and returns the trade fee rate.
 
-**How:** _TODO_
+**How:** Validates minimum length, then reads a little-endian `uint32` at `ammTradeFeeOffset`.
 
-**Why:** _TODO_
+The returned value is in the on-chain denominator (1e-6 units). Higher-level code typically converts to basis points by dividing by 100.
 
+**Why:** Fee rates are needed for analytics and for consistent swap event enrichment; extracting them from on-chain config keeps events correct across pool types.

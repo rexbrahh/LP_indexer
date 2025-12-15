@@ -6,11 +6,28 @@ This page is an **annotated source reference**. Code blocks are imported from th
 
 ## What this file is
 
-_TODO: one-paragraph summary of responsibility and boundaries._
+`ingestor/common/txmeta.go` provides a small adapter that converts upstream
+transaction updates into the repo’s **canonical transaction metadata** protobuf
+(`dex.sol.v1.TxMeta`).
+
+It deliberately does **not** attempt to decode swaps — it only extracts
+cross-cutting metadata like:
+
+- slot + signature
+- success/failure
+- compute units used
+- log messages
 
 ## Why this file exists
 
-_TODO: architectural motivation and why this logic lives here (vs elsewhere)._ 
+Both the Geyser and Helius ingestion paths observe transaction metadata, but
+they expose it through upstream-specific protobufs (`yellowstone-grpc` types).
+
+Publishing a canonical `TxMeta` event:
+
+- gives sinks a consistent way to join swaps with “tx-wide” context
+- makes debugging easier (log messages and CU usage are preserved)
+- reduces coupling: consumers do not need to understand upstream ingestion formats
 
 ## Full source
 
@@ -24,22 +41,26 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="package common" file=<rootDir>/ingestor/common/txmeta.go#L1-L1 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Declares the `common` package for shared ingestor helpers.
 
-**How:** _TODO_
+**How:** Ingest processors call helpers in this package when translating upstream updates into canonical protobuf messages.
 
-**Why:** _TODO_
+**Why:** Keeping small translation helpers here avoids duplicating them across Geyser/Helius code paths.
 
 ### imports
 
 ```go title="imports" file=<rootDir>/ingestor/common/txmeta.go#L3-L9 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Dependencies required to build a canonical `dexv1.TxMeta`.
 
-**How:** _TODO_
+**How:**
 
-**Why:** _TODO_
+- `base58` encodes Solana signatures into the standard string form.
+- `dexv1` provides the canonical protobuf type being emitted.
+- `pb` is the upstream Yellowstone transaction update type.
+
+**Why:** This function is intentionally “thin”: it depends on exactly what it needs to transform one protobuf into another.
 
 ### func ConvertTxMeta
 
@@ -48,9 +69,21 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func ConvertTxMeta" file=<rootDir>/ingestor/common/txmeta.go#L11-L38 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Builds a canonical `dexv1.TxMeta` from a Yellowstone `SubscribeUpdateTransaction`.
 
-**How:** _TODO_
+**How:** The function:
 
-**Why:** _TODO_
+1. Returns `nil` when the transaction update or metadata is missing (no partial messages).
+2. Base58-encodes the signature (`info.GetSignature()`).
+3. Populates the canonical fields:
+   - `ChainId = 501` (Solana)
+   - `Slot` from the update
+   - `Success` derived from `meta.GetErr() == nil`
+   - `CuUsed` and `LogMsgs` from the upstream metadata
+4. Leaves `CuPrice = 0` as a placeholder (fee pricing can be added later when available).
 
+**Why:** Swap events are often the primary product, but tx-level metadata is invaluable for:
+
+- debugging (log messages)
+- quality checks (success/failure)
+- downstream enrichment (compute usage, future fee attribution)

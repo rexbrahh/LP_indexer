@@ -6,11 +6,23 @@ This page is an **annotated source reference**. Code blocks are imported from th
 
 ## What this file is
 
-_TODO: one-paragraph summary of responsibility and boundaries._
+`sinks/clickhouse/config.go` defines the **runtime configuration contract** for the JetStream → ClickHouse sink.
+
+It centralizes:
+
+- the environment variable names (`CH_SINK_*`)
+- defaults for optional knobs (subject root, consumer name, batching)
+- validation rules (required fields, positive durations)
 
 ## Why this file exists
 
-_TODO: architectural motivation and why this logic lives here (vs elsewhere)._ 
+Sink services are operationally sensitive: most “it’s not writing data” failures come from misconfigured URLs, stream/consumer names, or table/DSN settings.
+
+Keeping the config contract in one place ensures:
+
+- every ClickHouse sink binary uses the same env vars and defaults
+- invalid configuration fails fast with actionable errors
+- ops changes (new env var, new default) are reviewable in a single diff
 
 ## Full source
 
@@ -24,22 +36,22 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="package clickhouse" file=<rootDir>/sinks/clickhouse/config.go#L1-L1 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Declares the `clickhouse` sink package’s configuration surface.
 
-**How:** _TODO_
+**How:** Commands and services call `ServiceConfigFromEnv()` to construct a validated `ServiceConfig` used by `NewService`.
 
-**Why:** _TODO_
+**Why:** The sink’s operational contract (env vars + defaults) should be shared across all entrypoints.
 
 ### imports
 
 ```go title="imports" file=<rootDir>/sinks/clickhouse/config.go#L3-L8 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Standard library helpers for configuration parsing.
 
-**How:** _TODO_
+**How:** The sink reads env vars (`os.Getenv`), parses numeric overrides (`strconv.Atoi`), and models timeouts/intervals with `time.Duration`.
 
-**Why:** _TODO_
+**Why:** Keeping config parsing stdlib-only makes it safe to import anywhere without pulling large dependency trees.
 
 ### const (envSinkBatchSize, envSinkCandlesTable, envSinkConsumer, envSinkDSN, envSinkDatabase, envSinkFlushIntervalMS, envSinkMaxRetries, envSinkNATSURL, envSinkPullBatch, envSinkPullTimeoutMS, envSinkRetryBackoffMS, envSinkRetryBackoffMax, envSinkStream, envSinkSubjectRoot, envSinkTradesTable)
 
@@ -48,11 +60,14 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="const (envSinkBatchSize, envSinkCandlesTable, envSinkConsumer, envSinkDSN, envSinkDatabase, envSinkFlushIntervalMS, envSinkMaxRetries, envSinkNATSURL, envSinkPullBatch, envSinkPullTimeoutMS, envSinkRetryBackoffMS, envSinkRetryBackoffMax, envSinkStream, envSinkSubjectRoot, envSinkTradesTable)" file=<rootDir>/sinks/clickhouse/config.go#L10-L27 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Defines the canonical `CH_SINK_*` environment variable names the sink recognizes.
 
-**How:** _TODO_
+**How:** These variables populate two related configs:
 
-**Why:** _TODO_
+- **JetStream pull consumption** (`NATSURL`, `Stream`, `SubjectRoot`, consumer name, pull batch/timeout)
+- **ClickHouse writer config** (DSN, database, table names, batching, retry/backoff)
+
+**Why:** Env vars are the sink’s “operational API”. Centralizing names prevents drift and makes runbooks reproducible.
 
 ### type (ServiceConfig)
 
@@ -61,11 +76,14 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="type (ServiceConfig)" file=<rootDir>/sinks/clickhouse/config.go#L29-L38 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** `ServiceConfig` is the validated, in-memory configuration for the ClickHouse sink service.
 
-**How:** _TODO_
+**How:** It combines:
 
-**Why:** _TODO_
+- where to read from: JetStream settings (`NATSURL`, `Stream`, `SubjectRoot`, `Consumer`, `Pull*`)
+- where to write to: ClickHouse writer settings (`Writer Config`)
+
+**Why:** The service needs both a source (JetStream) and a destination (ClickHouse) to be runnable.
 
 ### func (ServiceConfig) Validate
 
@@ -74,11 +92,15 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (ServiceConfig) Validate" file=<rootDir>/sinks/clickhouse/config.go#L40-L61 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Validates the config and returns a descriptive error for missing/invalid fields.
 
-**How:** _TODO_
+**How:** Enforces:
 
-**Why:** _TODO_
+- required JetStream fields are present (`NATSURL`, `Stream`, `SubjectRoot`, `Consumer`)
+- pull settings are sane (`PullBatch > 0`, `PullTimeout > 0`)
+- ClickHouse writer config validates (`validateConfig(c.Writer)`)
+
+**Why:** Failing fast on config issues is significantly easier to debug than failing later inside JetStream fetches or ClickHouse inserts.
 
 ### func ServiceConfigFromEnv
 
@@ -87,11 +109,28 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func ServiceConfigFromEnv" file=<rootDir>/sinks/clickhouse/config.go#L63-L145 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Reads environment variables into a `ServiceConfig`, applying defaults for optional knobs.
 
-**How:** _TODO_
+**How:** The function:
 
-**Why:** _TODO_
+1. Starts from a base config with defaults:
+   - `SubjectRoot = "dex.sol"`
+   - `Consumer = "clickhouse-sink"`
+   - `PullBatch = 256`
+   - `PullTimeout = 500ms`
+   - writer defaults for batch sizing + retry/backoff (but DSN/database/table names must still be provided)
+2. Applies env overrides for:
+   - pull settings (`CH_SINK_PULL_BATCH`, `CH_SINK_PULL_TIMEOUT_MS`)
+   - writer flush interval (`CH_SINK_FLUSH_INTERVAL_MS`)
+   - writer DSN/database/table names (`CH_SINK_DSN`, `CH_SINK_DATABASE`, `CH_SINK_TRADES_TABLE`, `CH_SINK_CANDLES_TABLE`)
+   - writer batch/retry knobs (`CH_SINK_BATCH_SIZE`, `CH_SINK_MAX_RETRIES`, `CH_SINK_RETRY_BACKOFF_*`)
+3. Returns `cfg.Validate()` so callers only receive validated configuration.
+
+**Why:** This is the sink’s “one true” env contract; it keeps commands/services consistent and prevents duplicated env parsing.
+
+:::note
+`validateConfig` currently requires both `TradesTable` and `CandlesTable` to be set. Even if the ClickHouse sink only writes trades today (`service.go`), you must still configure a candles table name (and ideally create it) for config validation to pass.
+:::
 
 ### func valueOrDefault
 
@@ -100,9 +139,8 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func valueOrDefault" file=<rootDir>/sinks/clickhouse/config.go#L147-L152 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Helper to apply a default when an env var is unset.
 
-**How:** _TODO_
+**How:** Returns `fallback` when `value` is empty; otherwise returns `value`.
 
-**Why:** _TODO_
-
+**Why:** Keeps `ServiceConfigFromEnv` readable by avoiding repetitive empty-string checks.

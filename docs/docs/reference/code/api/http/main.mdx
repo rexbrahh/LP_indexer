@@ -6,11 +6,25 @@ This page is an **annotated source reference**. Code blocks are imported from th
 
 ## What this file is
 
-_TODO: one-paragraph summary of responsibility and boundaries._
+`api/http/main.go` is the entrypoint for the repository’s HTTP API server.
+
+Today it provides a minimal API surface:
+
+- `GET /healthz` – liveness + uptime
+- `GET /v1/pool/{id}` – pool metadata (currently stubbed)
+- `GET /v1/pool/{id}/candles?tf=...` – OHLCV candles (stubbed, optionally cached in Redis)
+
+This file primarily focuses on wiring (router, handlers, shutdown), not analytics queries.
 
 ## Why this file exists
 
-_TODO: architectural motivation and why this logic lives here (vs elsewhere)._ 
+The indexer produces data that downstream systems need to consume. The HTTP API is the “serve” side of the ingest → decode → publish → serve flow.
+
+Even though the current implementation returns stubbed payloads, it establishes:
+
+- the route structure and response types
+- how caching is intended to work (Redis)
+- production-grade process behavior (graceful shutdown on SIGINT/SIGTERM)
 
 ## Full source
 
@@ -24,22 +38,28 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="package main" file=<rootDir>/api/http/main.go#L1-L1 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Declares `main`, the executable package for the HTTP API server.
 
-**How:** _TODO_
+**How:** `go run ./api/http` (or a compiled binary) starts `main()`, which constructs a `Server` and runs `http.Server`.
 
-**Why:** _TODO_
+**Why:** Keeping the API as a standalone process makes deployment and scaling independent from ingestion/decoding services.
 
 ### imports
 
 ```go title="imports" file=<rootDir>/api/http/main.go#L3-L18 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Standard library server building blocks plus the router and internal packages.
 
-**How:** _TODO_
+**How:**
 
-**Why:** _TODO_
+- stdlib: context, HTTP server, JSON encoding, logging, OS/signal handling
+- `chi`: lightweight router used to define routes and URL params
+- internal packages:
+  - `api/http/cache` for Redis-backed candle caching
+  - `api/http/types` for response types and validation helpers
+
+**Why:** The API server is primarily request/response plumbing; these imports keep it simple while still production-friendly.
 
 ### type (Server)
 
@@ -48,11 +68,16 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="type (Server)" file=<rootDir>/api/http/main.go#L20-L26 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Bundles dependencies and shared state for handling HTTP requests.
 
-**How:** _TODO_
+**How:** The `Server` stores:
 
-**Why:** _TODO_
+- `router`: the `chi` mux that dispatches requests
+- `cache`: optional Redis cache client (may be nil / disabled)
+- `logger`: request/log output
+- `started`: timestamp used for uptime in `/healthz`
+
+**Why:** Handlers often need shared dependencies; encapsulating them in a struct keeps handler signatures small and makes tests easier.
 
 ### func NewServer
 
@@ -61,11 +86,20 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func NewServer" file=<rootDir>/api/http/main.go#L28-L48 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Constructs a `Server` and registers routes.
 
-**How:** _TODO_
+**How:**
 
-**Why:** _TODO_
+- If `logger` is nil, it creates a default logger writing to stdout.
+- It creates a new `chi` router.
+- It registers:
+  - `GET /healthz`
+  - `GET /v1/pool/{id}`
+  - `GET /v1/pool/{id}/candles`
+
+The returned `Server` is ready to be passed into `http.Server`.
+
+**Why:** Centralizing route registration in one constructor makes the API surface easy to audit and avoids scattered `router.Get(...)` calls across files.
 
 ### func (*Server) Handler
 
@@ -74,11 +108,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*Server) Handler" file=<rootDir>/api/http/main.go#L50-L53 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Returns the underlying `http.Handler` for the server.
 
-**How:** _TODO_
+**How:** It exposes the `chi` router so tests can mount the handler without starting an actual listener.
 
-**Why:** _TODO_
+**Why:** Separating “build handler” from “listen on a port” is a standard pattern that makes integration tests simpler and faster.
 
 ### func (*Server) healthzHandler
 
@@ -87,11 +121,14 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*Server) healthzHandler" file=<rootDir>/api/http/main.go#L55-L62 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Implements the `/healthz` endpoint.
 
-**How:** _TODO_
+**How:** It returns a `types.HealthResponse` with:
 
-**Why:** _TODO_
+- `Status: "ok"`
+- `Uptime`: duration since `Server.started` (rounded)
+
+**Why:** A simple health endpoint is essential for orchestrators (Kubernetes, systemd, etc.) and makes it easy to confirm the API process is alive.
 
 ### func (*Server) poolHandler
 
@@ -100,11 +137,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*Server) poolHandler" file=<rootDir>/api/http/main.go#L64-L74 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Implements the `/v1/pool/{id}` endpoint (currently stubbed).
 
-**How:** _TODO_
+**How:** It reads `id` from the URL and returns a `types.PoolResponse` with placeholder values.
 
-**Why:** _TODO_
+**Why:** This establishes the API contract for pool metadata. A future implementation can replace stubs with persisted data (e.g. ClickHouse queries) without changing the route shape.
 
 ### func (*Server) candlesHandler
 
@@ -113,11 +150,21 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*Server) candlesHandler" file=<rootDir>/api/http/main.go#L76-L125 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Implements the `/v1/pool/{id}/candles` endpoint.
 
-**How:** _TODO_
+**How:**
 
-**Why:** _TODO_
+1. Extracts `poolID` from the URL and `tf` (timeframe) from the query string.
+2. Validates the timeframe using `types.ValidateTimeframe` (returns `400` on invalid input).
+3. Attempts to fetch cached candles when `s.cache != nil` via `cache.GetCandles`.
+4. If cache is disabled or the key is missing (`cache.ErrDisabled` / `types.ErrNotFound`), it falls back to `stubCandles`.
+5. If the cache errors unexpectedly, it logs and returns `500`.
+6. Returns a `types.CandlesResponse`.
+7. Best-effort seeds the cache in a background goroutine when a cache client exists.
+
+Note: the cache seeding goroutine uses `context.Background()` so it is decoupled from the request lifecycle.
+
+**Why:** Candles are a canonical “serve” use case for an indexer. This handler defines the shape, validation, and caching behavior even before real data plumbing is added.
 
 ### func stubCandles
 
@@ -126,11 +173,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func stubCandles" file=<rootDir>/api/http/main.go#L127-L148 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Generates deterministic placeholder candle data.
 
-**How:** _TODO_
+**How:** It constructs two `types.Candle` values at a fixed base timestamp (`Unix(0)`) and offsets the second candle by `durationForTimeframe(tf)`.
 
-**Why:** _TODO_
+**Why:** Stub data allows the server to demonstrate routing, validation, and caching behavior without requiring ClickHouse or other dependencies during early development.
 
 ### func durationForTimeframe
 
@@ -139,11 +186,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func durationForTimeframe" file=<rootDir>/api/http/main.go#L150-L163 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Converts a timeframe string into a `time.Duration`.
 
-**How:** _TODO_
+**How:** It maps supported values (`1m`, `5m`, `1h`, `1d`) to their corresponding duration and falls back to `time.Minute` for safety.
 
-**Why:** _TODO_
+**Why:** This keeps stub generation (and future time-bucketing logic) consistent with the accepted request parameter values.
 
 ### func writeJSON
 
@@ -152,11 +199,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func writeJSON" file=<rootDir>/api/http/main.go#L165-L171 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Writes a JSON response with a given HTTP status code.
 
-**How:** _TODO_
+**How:** It sets `Content-Type: application/json`, calls `WriteHeader`, then encodes `v` with `json.NewEncoder(w)`.
 
-**Why:** _TODO_
+**Why:** Centralizing response writing reduces handler boilerplate and ensures consistent headers across endpoints.
 
 ### func main
 
@@ -165,9 +212,15 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func main" file=<rootDir>/api/http/main.go#L173-L220 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Process entrypoint: loads config, constructs dependencies, runs the HTTP server, and handles shutdown.
 
-**How:** _TODO_
+**How:**
 
-**Why:** _TODO_
+1. Creates a logger.
+2. Loads Redis cache config from env (`cache.LoadConfigFromEnv`) and builds a cache client (`cache.New`).
+3. Constructs the `Server`.
+4. Determines the bind address from `API_HTTP_ADDR` (default `:8080`).
+5. Starts `http.Server.ListenAndServe()` in a goroutine.
+6. Waits for SIGINT/SIGTERM and calls `srv.Shutdown` with a 5s timeout.
 
+**Why:** Long-running services must shut down cleanly (stop accepting new requests, finish in-flight work) to avoid corrupted state or noisy errors during deploys.

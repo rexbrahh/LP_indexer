@@ -6,11 +6,29 @@ This page is an **annotated source reference**. Code blocks are imported from th
 
 ## What this file is
 
-_TODO: one-paragraph summary of responsibility and boundaries._
+`sinks/clickhouse/writer.go` is a **batching ClickHouse writer** built on the native protocol client `ch-go`.
+
+It provides:
+
+- connection management (DSN parsing + retries)
+- in-memory, column-oriented batching for high throughput inserts
+- insert helpers for two row types:
+  - `Trade` (swap events)
+  - `Candle` (derived OHLCV candles; used by `cmd/candles`)
 
 ## Why this file exists
 
-_TODO: architectural motivation and why this logic lives here (vs elsewhere)._ 
+Writing to ClickHouse efficiently requires:
+
+- **columnar encoding** (ClickHouse prefers sending whole columns, not row-by-row inserts)
+- **batching** (amortizes network and server-side overhead)
+- **careful schema mapping** (`Decimal(38,0)`, `DateTime64(3, 'UTC')`, etc.)
+
+Keeping this logic in one writer:
+
+- keeps the sink service loop simpler (`service.go` stays “consume + transform”)
+- makes insert behavior consistent across services/tools
+- provides a single place to update when storage schema changes
 
 ## Full source
 
@@ -24,22 +42,26 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="package clickhouse" file=<rootDir>/sinks/clickhouse/writer.go#L1-L1 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Declares the ClickHouse writer implementation in the `clickhouse` package.
 
-**How:** _TODO_
+**How:** Sink services and tools call `NewWithConfig` to create a `Writer`, then call `WriteTrades` / `WriteCandles` and periodically `Flush`.
 
-**Why:** _TODO_
+**Why:** Centralizing ClickHouse protocol details avoids scattering schema/encoding logic across the repo.
 
 ### imports
 
 ```go title="imports" file=<rootDir>/sinks/clickhouse/writer.go#L3-L12 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Dependencies for ClickHouse connectivity and columnar writes.
 
-**How:** _TODO_
+**How:**
 
-**Why:** _TODO_
+- `github.com/ClickHouse/ch-go` provides the client and wire protocol.
+- `github.com/ClickHouse/ch-go/proto` provides typed column buffers like `proto.ColUInt64`, `proto.ColDecimal128`, etc.
+- `net/url` + `strings` parse and validate the DSN format.
+
+**Why:** The writer needs to map Go values into ClickHouse’s native types with minimal overhead.
 
 ### type (Config)
 
@@ -48,11 +70,18 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="type (Config)" file=<rootDir>/sinks/clickhouse/writer.go#L14-L25 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** `Config` describes how to connect to ClickHouse and how to batch inserts.
 
-**How:** _TODO_
+**How:** Key fields:
 
-**Why:** _TODO_
+- `DSN`: connection string (e.g. `clickhouse://user:pass@host:9000/db?compression=lz4`)
+- `Database`: database to use (also applied to `ch.Options`)
+- `TradesTable` / `CandlesTable`: table names used in `INSERT INTO <table> VALUES`
+- `BatchSize`: number of rows to buffer before auto-flush
+- `FlushInterval`: used by services to flush periodically even if batch size isn’t reached
+- `MaxRetries` + `RetryBackoff*`: exponential backoff dialing policy
+
+**Why:** Connection/table names are operational; batching/retry knobs control performance and startup robustness.
 
 ### type (Writer)
 
@@ -61,11 +90,15 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="type (Writer)" file=<rootDir>/sinks/clickhouse/writer.go#L27-L34 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** `Writer` owns the ClickHouse client and buffered column batches.
 
-**How:** _TODO_
+**How:** It stores:
 
-**Why:** _TODO_
+- the validated config
+- a live `*ch.Client`
+- `tradesBatch` and `candlesBatch` column buffers (with row counts)
+
+**Why:** A long-lived writer amortizes connection setup and reduces per-insert allocations by reusing column buffers.
 
 ### type (tradeBatch)
 
@@ -74,11 +107,17 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="type (tradeBatch)" file=<rootDir>/sinks/clickhouse/writer.go#L36-L59 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** In-memory, column-oriented buffer for `Trade` rows.
 
-**How:** _TODO_
+**How:** Each field corresponds to a ClickHouse column buffer:
 
-**Why:** _TODO_
+- primitives use `proto.ColUInt*` / `proto.ColInt64`
+- timestamps use `proto.ColDateTime64` (configured to millisecond precision)
+- exact on-chain quantities (`base_in`, reserves, …) use `proto.ColDecimal128` and are aliased to `Decimal(38,0)` at insert time
+
+`count` tracks buffered rows and triggers batch flushes.
+
+**Why:** ClickHouse inserts are most efficient when sending whole columns; buffering by column matches the wire format.
 
 ### type (candleBatch)
 
@@ -87,11 +126,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="type (candleBatch)" file=<rootDir>/sinks/clickhouse/writer.go#L61-L70 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Column buffer for float-based candle rows.
 
-**How:** _TODO_
+**How:** Stores `timestamp`, `pool_id`, and OHLCV floats as `proto.ColFloat64` columns (plus a row count).
 
-**Why:** _TODO_
+**Why:** Used by `WriteCandles` to batch candle inserts with the same “flush on batch size” behavior as trades.
 
 ### func NewWithConfig
 
@@ -100,11 +139,16 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func NewWithConfig" file=<rootDir>/sinks/clickhouse/writer.go#L72-L127 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Constructs a `Writer`: validates config, connects to ClickHouse (with retries), and initializes column buffers.
 
-**How:** _TODO_
+**How:** The constructor:
 
-**Why:** _TODO_
+1. Runs `validateConfig(cfg)` to fail fast on missing DSN/database/table names.
+2. Dials ClickHouse using `connectWithRetry(ctx, cfg)`.
+3. Configures `proto.ColDateTime64` columns with `PrecisionMilli` to match `DateTime64(3, 'UTC')` schemas.
+4. Allocates `tradeBatch` and `candleBatch` buffers that will be appended to over time.
+
+**Why:** All write paths assume the client is live and column buffers are ready; construction is the right place to establish those invariants.
 
 ### func validateConfig
 
@@ -113,11 +157,19 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func validateConfig" file=<rootDir>/sinks/clickhouse/writer.go#L129-L150 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Validates required writer configuration.
 
-**How:** _TODO_
+**How:** Ensures:
 
-**Why:** _TODO_
+- `DSN`, `Database`, `TradesTable`, `CandlesTable` are non-empty
+- `BatchSize > 0`
+- `MaxRetries >= 0`
+
+**Why:** Prevents non-obvious runtime failures later (e.g. attempting to insert into an empty table name).
+
+:::caution
+Requiring `CandlesTable` is stricter than the current ClickHouse sink service needs (it only calls `WriteTrades` today). This is intentional for now because other components (like `cmd/candles`) may use the same writer and expect candle insertion to work.
+:::
 
 ### func connectWithRetry
 
@@ -126,11 +178,16 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func connectWithRetry" file=<rootDir>/sinks/clickhouse/writer.go#L152-L192 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Connects to ClickHouse with exponential backoff.
 
-**How:** _TODO_
+**How:**
 
-**Why:** _TODO_
+1. Parses the DSN into `ch.Options` via `parseDSN`.
+2. Applies the configured database.
+3. Dials with `ch.Dial(ctx, opts)` up to `MaxRetries + 1` attempts.
+4. On failures, waits for `backoff` (doubling each time, capped at `RetryBackoffMax`) while respecting `ctx.Done()`.
+
+**Why:** ClickHouse may not be ready at process start (especially in local `make up` flows). Retrying with backoff avoids flapping/crash loops while still respecting cancellation.
 
 ### func parseDSN
 
@@ -139,11 +196,21 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func parseDSN" file=<rootDir>/sinks/clickhouse/writer.go#L194-L240 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Parses a ClickHouse DSN string into `ch.Options`.
 
-**How:** _TODO_
+**How:** Supports DSNs like:
 
-**Why:** _TODO_
+- `clickhouse://user:pass@host:9000/db?compression=lz4`
+- `tcp://user:pass@host:9000/db?compression=none`
+
+It:
+
+- validates the scheme (`clickhouse` or `tcp`)
+- extracts address, user, password
+- optionally extracts database from the path component
+- maps a `compression` query parameter to `ch.Options.Compression`
+
+**Why:** Normalizing DSNs into `ch.Options` keeps the rest of the writer code independent of string parsing details.
 
 ### type (Trade)
 
@@ -152,11 +219,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="type (Trade)" file=<rootDir>/sinks/clickhouse/writer.go#L242-L265 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** In-memory representation of a single swap event row written to ClickHouse.
 
-**How:** _TODO_
+**How:** Fields map 1:1 to the `trades` table schema in `ops/clickhouse/all.sql` (`chain_id`, `slot`, `ts`, `sig`, `idx`, …).
 
-**Why:** _TODO_
+**Why:** Decouples the rest of the pipeline (protobuf events) from storage schema: services can construct a `Trade` without knowing ClickHouse column types.
 
 ### func (*Writer) WriteTrades
 
@@ -165,11 +232,16 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*Writer) WriteTrades" file=<rootDir>/sinks/clickhouse/writer.go#L267-L309 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Appends trades to the in-memory batch and flushes automatically when the batch fills.
 
-**How:** _TODO_
+**How:**
 
-**Why:** _TODO_
+- Appends each field into its corresponding column buffer.
+- Converts `uint64` amounts into `Decimal128` via `decimal128FromUint64` (so ClickHouse can store them as `Decimal(38,0)`).
+- Converts booleans (`Provisional`, `IsUndo`) into `UInt8` flags (0/1) to match the schema.
+- When `count >= BatchSize`, calls `flushTrades(ctx)`.
+
+**Why:** Batching trades is the main throughput lever: it reduces per-row overhead and makes inserts efficient for high-volume swap streams.
 
 ### type (Candle)
 
@@ -178,11 +250,15 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="type (Candle)" file=<rootDir>/sinks/clickhouse/writer.go#L311-L320 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Simple candle row type used by the ClickHouse writer.
 
-**How:** _TODO_
+**How:** Represents OHLCV with `float64` fields and a `Timestamp`.
 
-**Why:** _TODO_
+**Why:** Used by `WriteCandles` (and the `cmd/candles` tool) to insert derived candle data into ClickHouse.
+
+:::note
+The repository’s ClickHouse schema in `ops/clickhouse/all.sql` currently defines `ohlcv_*` tables with Q32 price fields (e.g. `open_px_q32`) and decimal volumes — it does not define a float-based `candles` table that matches this `Candle` struct.
+:::
 
 ### func (*Writer) WriteCandles
 
@@ -191,11 +267,15 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*Writer) WriteCandles" file=<rootDir>/sinks/clickhouse/writer.go#L322-L342 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Appends candles to the candle batch and flushes when the batch fills.
 
-**How:** _TODO_
+**How:** Mirrors `WriteTrades`:
 
-**Why:** _TODO_
+- append row fields into column buffers
+- increment row count
+- flush once `count >= BatchSize`
+
+**Why:** Candles are typically lower volume than swaps, but batching still reduces overhead and smooths write patterns.
 
 ### func (*Writer) flushTrades
 
@@ -204,11 +284,18 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*Writer) flushTrades" file=<rootDir>/sinks/clickhouse/writer.go#L344-L408 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Writes the current buffered trade columns to ClickHouse and resets the batch.
 
-**How:** _TODO_
+**How:**
 
-**Why:** _TODO_
+1. Builds a `proto.Input` list mapping ClickHouse column names to column buffers.
+2. Uses `proto.Alias` for decimal columns so `ColDecimal128` buffers are interpreted as `Decimal(38,0)`.
+3. Executes `INSERT INTO <TradesTable> VALUES` via `w.client.Do`.
+4. Reinitializes all column buffers and resets the count to 0.
+
+The timestamp column is recreated with millisecond precision after flush to maintain schema alignment.
+
+**Why:** This is the “hot path” that turns buffered events into durable storage. Resetting buffers keeps memory stable under sustained throughput.
 
 ### func (*Writer) flushCandles
 
@@ -217,11 +304,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*Writer) flushCandles" file=<rootDir>/sinks/clickhouse/writer.go#L410-L446 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Inserts the current buffered candle columns and resets the candle batch.
 
-**How:** _TODO_
+**How:** Constructs an input mapping for `timestamp`, `pool_id`, and OHLCV floats, executes an `INSERT`, then resets buffers and count.
 
-**Why:** _TODO_
+**Why:** Keeps candle insertion behavior consistent with trade insertion (batching + reset + explicit errors).
 
 ### func (*Writer) Flush
 
@@ -230,11 +317,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*Writer) Flush" file=<rootDir>/sinks/clickhouse/writer.go#L448-L454 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Forces both trade and candle batches to be written (if non-empty).
 
-**How:** _TODO_
+**How:** Calls `flushTrades` first, then `flushCandles`.
 
-**Why:** _TODO_
+**Why:** Used on periodic timers and shutdown paths to ensure buffered data becomes durable storage.
 
 ### func decimal128FromUint64
 
@@ -243,11 +330,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func decimal128FromUint64" file=<rootDir>/sinks/clickhouse/writer.go#L456-L458 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Converts a `uint64` into ClickHouse’s `Decimal128` representation used by `ch-go`.
 
-**How:** _TODO_
+**How:** Wraps `proto.Int128FromUInt64` and casts into `proto.Decimal128`.
 
-**Why:** _TODO_
+**Why:** ClickHouse `Decimal(38,0)` is a good fit for exact on-chain quantities; this helper keeps conversions consistent.
 
 ### func (*Writer) Close
 
@@ -256,9 +343,8 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*Writer) Close" file=<rootDir>/sinks/clickhouse/writer.go#L460-L466 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Flushes any buffered rows and closes the ClickHouse connection.
 
-**How:** _TODO_
+**How:** Calls `Flush`, then `w.client.Close()`.
 
-**Why:** _TODO_
-
+**Why:** Ensures shutdowns don’t silently drop buffered events.

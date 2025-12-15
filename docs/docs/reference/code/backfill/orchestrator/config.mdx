@@ -6,11 +6,24 @@ This page is an **annotated source reference**. Code blocks are imported from th
 
 ## What this file is
 
-_TODO: one-paragraph summary of responsibility and boundaries._
+`backfill/orchestrator/config.go` defines the environment-driven configuration for the **backfill orchestrator**.
+
+It controls:
+
+- the slot range to process (`StartSlot`, `EndSlot`)
+- how the range is chunked into work units (`BatchSize`)
+- how many work units run concurrently (`Concurrency`)
 
 ## Why this file exists
 
-_TODO: architectural motivation and why this logic lives here (vs elsewhere)._ 
+Backfilling is an operational workflow: it’s run in jobs, replay pipelines, and ad-hoc debugging sessions.
+Those environments need a stable configuration surface (env vars) and safe defaults.
+
+Keeping these knobs in a dedicated config file:
+
+- makes the “ops API” explicit (which env vars exist)
+- guarantees bad ranges fail fast at startup
+- keeps `orchestrator.Orchestrator` focused on scheduling, not parsing
 
 ## Full source
 
@@ -24,22 +37,22 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="package orchestrator" file=<rootDir>/backfill/orchestrator/config.go#L1-L1 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Declares the `orchestrator` package that schedules backfill work over slot ranges.
 
-**How:** _TODO_
+**How:** The package exposes `FromEnv()` + `DefaultConfig()` to load config, and `New(...)`/`Run(...)` to execute backfills.
 
-**Why:** _TODO_
+**Why:** This isolates “how do we schedule slot ranges?” as a reusable module for different backfill entrypoints.
 
 ### imports
 
 ```go title="imports" file=<rootDir>/backfill/orchestrator/config.go#L3-L7 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Standard library dependencies for env loading, parsing, and error formatting.
 
-**How:** _TODO_
+**How:** `os.Getenv` reads env vars; `strconv` parses numbers; `fmt.Errorf` wraps errors with context.
 
-**Why:** _TODO_
+**Why:** Backfill configuration should stay simple (stdlib only) so it can be used by small job binaries without heavy dependencies.
 
 ### const (envBatchSize, envConcurrency, envEndSlot, envStartSlot)
 
@@ -48,11 +61,16 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="const (envBatchSize, envConcurrency, envEndSlot, envStartSlot)" file=<rootDir>/backfill/orchestrator/config.go#L9-L14 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Canonical environment variable names for backfill scheduling.
 
-**How:** _TODO_
+**How:**
 
-**Why:** _TODO_
+- `BACKFILL_START_SLOT`: first slot to include.
+- `BACKFILL_END_SLOT`: exclusive end slot; `0` means “no explicit end”.
+- `BACKFILL_BATCH_SIZE`: number of slots per scheduled range.
+- `BACKFILL_CONCURRENCY`: number of concurrent workers.
+
+**Why:** Env vars are the primary configuration mechanism for batch jobs; defining names once prevents drift and improves discoverability.
 
 ### type (Config)
 
@@ -61,11 +79,16 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="type (Config)" file=<rootDir>/backfill/orchestrator/config.go#L16-L22 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Holds the runtime parameters that control how a backfill run is scheduled.
 
-**How:** _TODO_
+**How:** `Run` interprets the config as:
 
-**Why:** _TODO_
+- work covers `[StartSlot, EndSlot)` when `EndSlot != 0`
+- work covers `[StartSlot, +∞)` (until `uint64` overflow) when `EndSlot == 0`
+- each scheduled work unit is a `Range` of length `BatchSize`
+- at most `Concurrency` `RangeProcessor` calls run at once
+
+**Why:** A clear, typed config makes it possible to validate and reuse these knobs consistently across different backfill entrypoints.
 
 ### func DefaultConfig
 
@@ -74,11 +97,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func DefaultConfig" file=<rootDir>/backfill/orchestrator/config.go#L24-L30 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Returns a `Config` with safe defaults for optional tuning parameters.
 
-**How:** _TODO_
+**How:** It sets a moderate batch size and a small concurrency to keep resource usage predictable out of the box.
 
-**Why:** _TODO_
+**Why:** Backfills can be expensive; defaults help prevent accidental “spawn 1000 workers and melt a node” scenarios while still being overridable via env vars.
 
 ### func (Config) Validate
 
@@ -87,11 +110,15 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (Config) Validate" file=<rootDir>/backfill/orchestrator/config.go#L32-L44 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Validates that the configured slot range and concurrency settings are sane.
 
-**How:** _TODO_
+**How:** It enforces:
 
-**Why:** _TODO_
+- if `EndSlot != 0`, then `StartSlot < EndSlot` (non-empty range)
+- `BatchSize > 0` (otherwise the scheduler can’t make progress)
+- `Concurrency > 0` (otherwise no workers are created)
+
+**Why:** These constraints prevent deadlocks and infinite loops in the orchestrator and make configuration errors obvious at startup.
 
 ### func FromEnv
 
@@ -100,9 +127,12 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func FromEnv" file=<rootDir>/backfill/orchestrator/config.go#L46-L79 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Loads a backfill `Config` from environment variables.
 
-**How:** _TODO_
+**How:** The function:
 
-**Why:** _TODO_
+1. Starts from `DefaultConfig()`.
+2. Parses and overrides fields when the corresponding env var is set.
+3. Returns `cfg.Validate()` so callers always receive a valid config.
 
+**Why:** Backfill jobs are commonly configured by env vars in CI/CD and schedulers; a single loader keeps behavior consistent across environments.

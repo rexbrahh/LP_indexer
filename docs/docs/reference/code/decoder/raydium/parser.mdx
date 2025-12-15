@@ -6,11 +6,26 @@ This page is an **annotated source reference**. Code blocks are imported from th
 
 ## What this file is
 
-_TODO: one-paragraph summary of responsibility and boundaries._
+`decoder/raydium/parser.go` turns a decoded Raydium swap instruction plus
+transaction context into a normalized `SwapEvent`.
+
+It is responsible for:
+
+- interpreting vault balance deltas to determine swap direction and amounts
+- normalizing mint ordering into a canonical base/quote pair
+- providing small helpers to compute spot price and quote-volume
 
 ## Why this file exists
 
-_TODO: architectural motivation and why this logic lives here (vs elsewhere)._ 
+Raydium swap instruction bytes alone do not reliably indicate the actual
+amounts swapped; the most trustworthy signal in this pipeline is the change in
+token vault balances before/after the transaction.
+
+This file exists to centralize:
+
+- “delta-based” amount derivation
+- canonical pair normalization so downstream systems don’t see both `A/B` and `B/A`
+- derived price/volume computations used in analytics/debugging
 
 ## Full source
 
@@ -24,22 +39,22 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="package raydium" file=<rootDir>/decoder/raydium/parser.go#L1-L1 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Declares the Raydium decoder package’s higher-level parsing helpers.
 
-**How:** _TODO_
+**How:** Callers parse raw instruction bytes (`instruction.go`), then call `ParseSwapEvent(instr, ctx)` to produce a normalized event.
 
-**Why:** _TODO_
+**Why:** Separates “byte decoding” from “semantic interpretation” (amounts, direction, canonical ordering).
 
 ### imports
 
 ```go title="imports" file=<rootDir>/decoder/raydium/parser.go#L3-L7 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Dependencies for canonical pair resolution and error formatting.
 
-**How:** _TODO_
+**How:** Uses `decoder/common` to resolve canonical base/quote ordering and to scale amounts for price computation.
 
-**Why:** _TODO_
+**Why:** Canonical ordering and scaling logic should be shared across decoders.
 
 ### type (AccountKeys)
 
@@ -48,11 +63,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="type (AccountKeys)" file=<rootDir>/decoder/raydium/parser.go#L9-L21 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Declares the set of accounts relevant to a Raydium swap.
 
-**How:** _TODO_
+**How:** Includes pool address, token vaults, mint IDs, user token accounts, tick arrays, and an observation key.
 
-**Why:** _TODO_
+**Why:** Many Raydium swap interpretations need to know which accounts correspond to which roles; bundling them avoids passing a long parameter list through decoding code.
 
 ### type (SwapContext)
 
@@ -61,11 +76,17 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="type (SwapContext)" file=<rootDir>/decoder/raydium/parser.go#L23-L36 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Additional context required to interpret a swap.
 
-**How:** _TODO_
+**How:** Provides:
 
-**Why:** _TODO_
+- the relevant account keys (`Accounts`)
+- pre/post vault balances for both legs (A and B)
+- decimals for both mints
+- fee bps (when known)
+- transaction identifiers (slot, signature, timestamp)
+
+**Why:** Determining swap direction and amounts requires comparing before/after vault balances, which are not present in the instruction payload itself.
 
 ### func ParseSwapEvent
 
@@ -74,11 +95,21 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func ParseSwapEvent" file=<rootDir>/decoder/raydium/parser.go#L38-L87 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Produces a normalized `SwapEvent` from a swap instruction and its context.
 
-**How:** _TODO_
+**How:**
 
-**Why:** _TODO_
+1. Validates that `instr` and `ctx` are non-nil.
+2. Seeds an event with pool/mint identifiers, decimals, fee, sqrt price limit fields, and tx metadata.
+3. Computes vault deltas:
+   - `deltaA = postA - preA`
+   - `deltaB = postB - preB`
+4. Infers direction and amounts:
+   - `deltaA > 0 && deltaB < 0` → A vault increased, B vault decreased → A in / B out (`IsBaseInput = true`)
+   - `deltaA < 0 && deltaB > 0` → B in / A out (`IsBaseInput = false`)
+5. Rejects ambiguous cases and zero-sized swaps.
+
+**Why:** Vault deltas are the most robust way to compute realized swap amounts in this pipeline, and they provide a consistent basis for canonical event creation.
 
 ### func (*SwapEvent) NormalizeToCanonicalPair
 
@@ -87,11 +118,16 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*SwapEvent) NormalizeToCanonicalPair" file=<rootDir>/decoder/raydium/parser.go#L89-L109 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Normalizes the event’s mint ordering to a canonical base/quote pair.
 
-**How:** _TODO_
+**How:** Calls `common.ResolvePair(MintA, MintB)`. When the resolved pair is inverted relative to the current event:
 
-**Why:** _TODO_
+- swaps `MintA`/`MintB` and `DecimalsA`/`DecimalsB`
+- flips the direction flag (`IsBaseInput = !IsBaseInput`)
+
+Returns the resolved `CanonicalPair`.
+
+**Why:** Downstream sinks and aggregations benefit from a single market representation (e.g. always `SOL/USDC`). Canonicalization prevents splitting volume across inverted labels.
 
 ### func (*SwapEvent) CalculatePrice
 
@@ -100,11 +136,14 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*SwapEvent) CalculatePrice" file=<rootDir>/decoder/raydium/parser.go#L111-L128 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Computes an effective quote/base price from the swap amounts.
 
-**How:** _TODO_
+**How:** Scales amounts by decimals and returns `quoteAmount / baseAmount`. The method accounts for direction:
 
-**Why:** _TODO_
+- for base-input swaps: base = `AmountIn(A)`, quote = `AmountOut(B)`
+- for base-output swaps: base = `AmountOut(A)`, quote = `AmountIn(B)`
+
+**Why:** A derived price is useful for analytics and sanity checks, and can be compared against pool-reported sqrt price.
 
 ### func (*SwapEvent) CalculateVolume
 
@@ -113,9 +152,8 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*SwapEvent) CalculateVolume" file=<rootDir>/decoder/raydium/parser.go#L130-L140 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Returns swap volume measured in the quote token’s raw units.
 
-**How:** _TODO_
+**How:** For base-input swaps, the quote leg is `AmountOut`; for base-output swaps, the quote leg is `AmountIn`.
 
-**Why:** _TODO_
-
+**Why:** Quote-volume is a common aggregation axis for candles and analytics (it is stable across base/quote price changes).

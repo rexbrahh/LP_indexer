@@ -6,11 +6,25 @@ This page is an **annotated source reference**. Code blocks are imported from th
 
 ## What this file is
 
-_TODO: one-paragraph summary of responsibility and boundaries._
+`ingestor/internal/pools/orca.go` contains low-level byte parsing helpers for
+Orca Whirlpool pool accounts.
+
+It defines:
+
+- fixed offsets/length checks for fields inside the Whirlpool account layout
+- an `OrcaPoolInfo` struct holding the subset of metadata needed for swap decoding
+- `DecodeOrcaPool` to extract mints/vaults and fee rate from raw account data
 
 ## Why this file exists
 
-_TODO: architectural motivation and why this logic lives here (vs elsewhere)._ 
+The swap decoder needs stable pool metadata (token mints, vault addresses, fee
+rate) to interpret token balance deltas and produce canonical swap events.
+
+This file exists to:
+
+- keep the “account layout knowledge” in one place
+- avoid runtime dependencies on full Anchor decoding/IDL tooling
+- support enrichment via account updates (`ingestor/decoder.HandleAccount`)
 
 ## Full source
 
@@ -24,22 +38,22 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="package pools" file=<rootDir>/ingestor/internal/pools/orca.go#L1-L1 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Declares the `pools` internal helper package.
 
-**How:** _TODO_
+**How:** Called by the ingest decoder when it receives Orca program-owned account updates.
 
-**Why:** _TODO_
+**Why:** Parsing raw bytes is DEX-specific and should remain in an internal, well-reviewed location.
 
 ### imports
 
 ```go title="imports" file=<rootDir>/ingestor/internal/pools/orca.go#L3-L8 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Dependencies for parsing and base58-encoding extracted pubkeys.
 
-**How:** _TODO_
+**How:** `encoding/binary` reads little-endian integers (fee rates), `base58` encodes 32-byte pubkeys into strings, and `fmt` formats descriptive errors.
 
-**Why:** _TODO_
+**Why:** These helpers are performance-sensitive and keep dependencies minimal.
 
 ### const (orcaConfigOffset, orcaDiscriminatorLen, orcaFeeGrowthAOffset, orcaFeeRateOffset, orcaLiquidityOffset, orcaProtocolFeeAOOffset, orcaProtocolFeeBOOffset, orcaProtocolFeeOffset, orcaRequiredLength, orcaSqrtPriceOffset, orcaTickOffset, orcaTokenMintAOffset, orcaTokenMintBOffset, orcaTokenVaultAOffset, orcaTokenVaultBOffset)
 
@@ -48,11 +62,17 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="const (orcaConfigOffset, orcaDiscriminatorLen, orcaFeeGrowthAOffset, orcaFeeRateOffset, orcaLiquidityOffset, orcaProtocolFeeAOOffset, orcaProtocolFeeBOOffset, orcaProtocolFeeOffset, orcaRequiredLength, orcaSqrtPriceOffset, orcaTickOffset, orcaTokenMintAOffset, orcaTokenMintBOffset, orcaTokenVaultAOffset, orcaTokenVaultBOffset)" file=<rootDir>/ingestor/internal/pools/orca.go#L10-L26 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Hard-coded offsets and minimum lengths for the Whirlpool account layout.
 
-**How:** _TODO_
+**How:** The constants compute offsets for fields like:
 
-**Why:** _TODO_
+- config pubkey
+- fee rate and protocol fee rate
+- token mint A/B and vault A/B pubkeys
+
+`orcaRequiredLength` is the minimum number of bytes required to safely slice all fields used by `DecodeOrcaPool`.
+
+**Why:** The decoder parses raw bytes by slicing. Explicit offsets + bounds checks prevent panics and make layout assumptions reviewable.
 
 ### type (OrcaPoolInfo)
 
@@ -61,11 +81,18 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="type (OrcaPoolInfo)" file=<rootDir>/ingestor/internal/pools/orca.go#L28-L37 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Minimal metadata needed to decode Orca swaps from balance deltas.
 
-**How:** _TODO_
+**How:** Stores:
 
-**Why:** _TODO_
+- `FeeRate` (hundredths of a basis point) and `ProtocolFee`
+- token mint A/B pubkeys
+- token vault A/B pubkeys
+- the pool config pubkey
+
+All pubkeys are stored as base58 strings for stable map keys and logging.
+
+**Why:** The swap decoder needs to know which mints/vaults correspond to the pool and what fee rate to attach to emitted events.
 
 ### func DecodeOrcaPool
 
@@ -74,9 +101,15 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func DecodeOrcaPool" file=<rootDir>/ingestor/internal/pools/orca.go#L39-L54 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Extracts `OrcaPoolInfo` from raw whirlpool account bytes.
 
-**How:** _TODO_
+**How:** Validates the data length, then slices and decodes fields at fixed offsets:
 
-**Why:** _TODO_
+- pubkey fields are base58-encoded from 32-byte slices
+- fee fields are parsed using little-endian uint16 reads
 
+**Why:** Account update streams provide raw bytes; decoding them into a typed struct allows the higher-level swap decoder to produce correct canonical events without embedding byte offsets in multiple places.
+
+:::note
+This function assumes the caller has already identified the account type by context (e.g. “account owner is Orca Whirlpool program”). It does not currently validate the discriminator bytes itself.
+:::

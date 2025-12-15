@@ -6,11 +6,31 @@ This page is an **annotated source reference**. Code blocks are imported from th
 
 ## What this file is
 
-_TODO: one-paragraph summary of responsibility and boundaries._
+`decoder/orca_whirlpool/decoder.go` implements an Orca Whirlpool swap decoder.
+
+It takes as input:
+
+- a raw swap instruction payload (bytes)
+- account lists and balance snapshots
+- Whirlpool pool state before/after the swap
+
+and produces a normalized `SwapEvent` including:
+
+- swap direction + amounts
+- sqrt price / tick / liquidity before and after
+- canonical base/quote orientation and derived price/volume
 
 ## Why this file exists
 
-_TODO: architectural motivation and why this logic lives here (vs elsewhere)._ 
+Orca Whirlpool is a CLMM (concentrated liquidity) DEX. Decoding swaps generally
+requires more than just the instruction bytes — pool state and token decimals
+matter for correct price/volume interpretation.
+
+This decoder exists to:
+
+- isolate Orca-specific instruction and state layout knowledge
+- provide a normalized swap event model for ingestion/publishing
+- keep the rest of the pipeline DEX-agnostic
 
 ## Full source
 
@@ -24,22 +44,26 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="package orca_whirlpool" file=<rootDir>/decoder/orca_whirlpool/decoder.go#L1-L1 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Declares the Orca Whirlpool decoder package.
 
-**How:** _TODO_
+**How:** The main entrypoint is `(*Decoder) DecodeSwapTransaction(...)`.
 
-**Why:** _TODO_
+**Why:** Encapsulates Orca-specific logic behind a clean API so higher-level ingestion code can treat all DEXes uniformly.
 
 ### imports
 
 ```go title="imports" file=<rootDir>/decoder/orca_whirlpool/decoder.go#L3-L10 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Dependencies for instruction parsing, fixed-point conversions, and token metadata lookup.
 
-**How:** _TODO_
+**How:** Uses:
 
-**Why:** _TODO_
+- `bytes`/`encoding/binary` to decode binary instruction layouts
+- `decoder/common` for sqrt price conversion and base/quote determination
+- `time` for timestamped swap events
+
+**Why:** CLMM decoding combines binary parsing with numeric interpretation and token metadata.
 
 ### type (Decoder)
 
@@ -48,11 +72,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="type (Decoder)" file=<rootDir>/decoder/orca_whirlpool/decoder.go#L12-L15 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Orca Whirlpool swap decoder instance.
 
-**How:** _TODO_
+**How:** Holds a `common.MintMetadataProvider`, which supplies mint decimals (and symbols for canonical ordering).
 
-**Why:** _TODO_
+**Why:** Decimals are required to scale amounts and compute prices/volumes consistently.
 
 ### func NewDecoder
 
@@ -61,11 +85,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func NewDecoder" file=<rootDir>/decoder/orca_whirlpool/decoder.go#L17-L22 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Constructs a decoder with the provided mint metadata provider.
 
-**How:** _TODO_
+**How:** Stores the provider on the decoder struct.
 
-**Why:** _TODO_
+**Why:** Separates token metadata lookup from decode logic and makes the decoder testable (providers can be stubbed).
 
 ### func (*Decoder) DecodeSwapTransaction
 
@@ -74,11 +98,24 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*Decoder) DecodeSwapTransaction" file=<rootDir>/decoder/orca_whirlpool/decoder.go#L24-L162 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Decodes an Orca Whirlpool swap from instruction bytes + contextual transaction/pool state.
 
-**How:** _TODO_
+**How:** The function:
 
-**Why:** _TODO_
+1. Validates the instruction discriminator (first 8 bytes) matches `SwapInstructionDiscriminator`.
+2. Decodes the rest of the instruction via `decodeSwapInstruction`.
+3. Extracts the pool address from the accounts list (by convention, index 2).
+4. Requires both pre- and post-swap pool state snapshots (to compute price/tick/liquidity changes).
+5. Computes realized swap amounts using `calculateAmounts` (based on balance deltas).
+6. Looks up token decimals for mint A/B via the metadata provider.
+7. Determines canonical base/quote ordering via `common.DetermineBaseQuote`.
+8. Converts the post-swap sqrt price (Q64.64 string) into a float price.
+9. Computes normalized base/quote volumes and a base/quote-oriented price.
+10. Computes fee and protocol fee amounts from the input amount and configured fee rates.
+
+Returns a populated `SwapEvent` on success.
+
+**Why:** Orca swaps are CLMM swaps: direction, amounts, and price are best interpreted when you combine instruction flags with balance deltas and pool state.
 
 ### func decodeSwapInstruction
 
@@ -87,11 +124,17 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func decodeSwapInstruction" file=<rootDir>/decoder/orca_whirlpool/decoder.go#L164-L207 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Decodes the swap instruction payload after the 8-byte discriminator.
 
-**How:** _TODO_
+**How:** Reads fields in little-endian order:
 
-**Why:** _TODO_
+- amount (u64)
+- other amount threshold (u64)
+- sqrt price limit (u128 → 16 bytes → string)
+- `amount_specified_is_input` (bool byte)
+- `a_to_b` (bool byte)
+
+**Why:** Binary decoding is the first step in turning an instruction into a semantic swap event.
 
 ### func (*Decoder) calculateAmounts
 
@@ -100,11 +143,20 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*Decoder) calculateAmounts" file=<rootDir>/decoder/orca_whirlpool/decoder.go#L209-L241 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Computes `amountIn` and `amountOut` by comparing pre/post balance snapshots.
 
-**How:** _TODO_
+**How:** Assumes a “typical” Orca swap account ordering and uses hard-coded indices into `preBalances`/`postBalances`:
 
-**Why:** _TODO_
+- for A→B: input is user token A decrease, output is user token B increase
+- for B→A: input is user token B decrease, output is user token A increase
+
+Returns an error when there are not enough balance entries.
+
+**Why:** Balance deltas are often more reliable than instruction payload amounts for determining realized swap quantities.
+
+:::note
+This helper currently assumes a specific account/balance indexing scheme and does not use the `accounts` slice. If Orca instruction layouts vary, this is the first place that may need to be generalized.
+:::
 
 ### func calculateFeeAmount
 
@@ -113,11 +165,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func calculateFeeAmount" file=<rootDir>/decoder/orca_whirlpool/decoder.go#L243-L248 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Computes the fee amount taken from the input amount.
 
-**How:** _TODO_
+**How:** Applies the basis-point fee rate: `(amountIn * feeRate) / 10000`.
 
-**Why:** _TODO_
+**Why:** Fee amounts are useful for analytics and can be compared against pool state transitions.
 
 ### func calculateProtocolFee
 
@@ -126,11 +178,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func calculateProtocolFee" file=<rootDir>/decoder/orca_whirlpool/decoder.go#L250-L255 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Computes the protocol fee portion from the total fee.
 
-**How:** _TODO_
+**How:** Applies basis points to the fee amount: `(feeAmount * protocolFeeRate) / 10000`.
 
-**Why:** _TODO_
+**Why:** Distinguishing LP fee vs protocol fee can matter in revenue analytics and for validating pool accounting.
 
 ### func bytesToU128String
 
@@ -139,9 +191,15 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func bytesToU128String" file=<rootDir>/decoder/orca_whirlpool/decoder.go#L257-L281 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Converts a 16-byte little-endian u128 value to a string representation.
 
-**How:** _TODO_
+**How:** Extracts low/high 64-bit parts and formats:
 
-**Why:** _TODO_
+- `low` when `high == 0`
+- otherwise uses a simplified formatting strategy that concatenates `high` and padded `low`
 
+**Why:** Some Whirlpool instruction fields (like sqrt price limits) are u128-sized. Representing them as strings avoids overflow in native Go integer types.
+
+:::caution
+The current implementation is explicitly described as simplified and does not perform a true base-10 u128 conversion when `high != 0`. For fully correct conversion, use `math/big`.
+:::

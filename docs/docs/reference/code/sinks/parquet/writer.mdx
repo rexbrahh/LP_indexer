@@ -6,11 +6,28 @@ This page is an **annotated source reference**. Code blocks are imported from th
 
 ## What this file is
 
-_TODO: one-paragraph summary of responsibility and boundaries._
+`sinks/parquet/writer.go` implements the **Parquet writer** that buffers candle rows and uploads Parquet files to S3-compatible object storage.
+
+Key behaviors:
+
+- groups candles into “buckets” by `(timeframe, scope)` so files are naturally partitioned
+- flushes on either a row threshold (`BatchRows`) or time threshold (`FlushInterval`)
+- writes Parquet using `parquet-go` with Snappy compression
+- uploads with the AWS SDK’s `s3manager.Uploader`
 
 ## Why this file exists
 
-_TODO: architectural motivation and why this logic lives here (vs elsewhere)._ 
+The parquet sink wants an output that is:
+
+- append-only (safe under retries/replays)
+- queryable in analytics systems (DuckDB/Athena/Spark)
+- cheap to store and stream (columnar + compressed)
+
+This writer isolates the mechanics of:
+
+- translating protobuf candle messages into a stable Parquet schema
+- cutting files with a sane partitioning layout
+- interacting with S3/MinIO upload APIs
 
 ## Full source
 
@@ -24,22 +41,26 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="package parquet" file=<rootDir>/sinks/parquet/writer.go#L1-L1 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Declares the parquet writer implementation in the `parquet` package.
 
-**How:** _TODO_
+**How:** Services create the writer via `NewWriter(cfg)`, then call `AppendCandle` as messages arrive and periodically call `Flush`.
 
-**Why:** _TODO_
+**Why:** Encapsulates Parquet + S3 upload details behind a simple append/flush interface.
 
 ### imports
 
 ```go title="imports" file=<rootDir>/sinks/parquet/writer.go#L3-L21 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Dependencies for Parquet encoding, S3 uploads, and concurrency control.
 
-**How:** _TODO_
+**How:**
 
-**Why:** _TODO_
+- AWS SDK packages create an uploader that can target S3-compatible endpoints.
+- `parquet-go` writes Parquet content into an in-memory buffer with Snappy compression.
+- `sync.Mutex` protects shared buffers because the writer can be called from multiple goroutines.
+
+**Why:** Parquet output is “encode + upload”, and those operations require both external SDKs and careful locking around shared state.
 
 ### var (ErrWriterDisabled)
 
@@ -48,11 +69,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="var (ErrWriterDisabled)" file=<rootDir>/sinks/parquet/writer.go#L23-L23 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Sentinel error indicating the writer is disabled due to missing required configuration.
 
-**How:** _TODO_
+**How:** `NewWriter` returns `ErrWriterDisabled` if core S3 fields are empty (endpoint/bucket/access key/secret).
 
-**Why:** _TODO_
+**Why:** Makes “writer not configured” distinguishable from “writer configured but failing”, which is useful for local/dev workflows.
 
 ### type (Writer)
 
@@ -61,11 +82,17 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="type (Writer)" file=<rootDir>/sinks/parquet/writer.go#L25-L33 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** `Writer` buffers candle rows and uploads Parquet objects.
 
-**How:** _TODO_
+**How:** It stores:
 
-**Why:** _TODO_
+- `cfg`: validated `Config` (endpoint/bucket/prefix, flush policy, etc.)
+- `mu`: mutex protecting internal state
+- `buckets`: map from bucket key to buffered `candleRow` slices
+- `uploader`: AWS S3 uploader used for uploads
+- `lastFlush`: coarse “last time any bucket was flushed”
+
+**Why:** Buffering allows efficient Parquet writes and reduces object-storage overhead from many tiny uploads.
 
 ### type (candleRow)
 
@@ -74,11 +101,18 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="type (candleRow)" file=<rootDir>/sinks/parquet/writer.go#L35-L53 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** The Parquet schema for a single candle row.
 
-**How:** _TODO_
+**How:** Struct tags (`parquet:"..."`) define column names and types, including:
 
-**Why:** _TODO_
+- human-readable dimensions (`pair_id`, `pool_id`, `timeframe`, `scope`)
+- time window (`window_start` as a UTC seconds timestamp)
+- candle values in Q32 (`open_px_q32`, `high_px_q32`, …)
+- 128-bit-ish volumes split into hi/lo fields (`vol_base_hi`, `vol_base_lo`, …)
+
+Rows are written via `parquet.NewGenericWriter[candleRow]`.
+
+**Why:** Making the schema explicit in tags keeps the Parquet output stable and machine-readable for downstream analytics.
 
 ### func NewWriter
 
@@ -87,11 +121,20 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func NewWriter" file=<rootDir>/sinks/parquet/writer.go#L55-L82 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Validates configuration and constructs a usable writer with an S3 uploader.
 
-**How:** _TODO_
+**How:**
 
-**Why:** _TODO_
+1. Fast-path disables the writer when required S3 fields are missing (returns `ErrWriterDisabled`).
+2. Validates the config (`cfg.Validate()`).
+3. Builds an AWS config that targets an S3-compatible endpoint:
+   - `Endpoint` and `Region` set from config
+   - `S3ForcePathStyle = true` for compatibility with many S3-like services (e.g. MinIO)
+   - static credentials from access/secret keys
+4. Creates an AWS session and an `s3manager.Uploader`.
+5. Initializes the `buckets` map and `lastFlush`.
+
+**Why:** Keeping setup centralized makes failures predictable: either you have a ready-to-use writer, or you get a clear configuration/setup error.
 
 ### func (*Writer) AppendSwap
 
@@ -100,11 +143,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*Writer) AppendSwap" file=<rootDir>/sinks/parquet/writer.go#L84-L88 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Placeholder for appending swap events (currently a no-op).
 
-**How:** _TODO_
+**How:** Discards both parameters and returns `nil`.
 
-**Why:** _TODO_
+**Why:** Likely exists to satisfy a shared sink interface or to reserve an API surface for future “write swaps to parquet” support.
 
 ### func (*Writer) AppendCandle
 
@@ -113,11 +156,26 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*Writer) AppendCandle" file=<rootDir>/sinks/parquet/writer.go#L90-L140 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Translates a protobuf candle message into a `candleRow`, buffers it, and flushes when thresholds are reached.
 
-**How:** _TODO_
+**How:** The method:
 
-**Why:** _TODO_
+1. Validates `candle` is non-nil.
+2. Locks `w.mu` to protect internal maps/slices.
+3. Computes dimensions:
+   - `timeframe` from `candle.timeframe` (defaults to `"unknown"`)
+   - `scope` is `"pool"` when `pool_id` is present, else `"pair"`
+4. Builds a `candleRow`:
+   - copies scalar fields (`chain_id`, ids, provisional/correction flags, q32 prices, trades)
+   - flattens `vol_base` and `vol_quote` hi/lo pairs when present
+5. Appends into `w.buckets[bucketKey(timeframe, scope)]`.
+6. Flushes when:
+   - the bucket reaches `BatchRows`, or
+   - enough time has elapsed since the last flush (`FlushInterval`)
+
+Flush is performed by calling `flushLocked(ctx)` while the mutex is still held.
+
+**Why:** Grouping by timeframe/scope produces a natural partitioning layout and creates Parquet files that are efficient to query (filtering by timeframe/scope is common).
 
 ### func (*Writer) Flush
 
@@ -126,11 +184,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*Writer) Flush" file=<rootDir>/sinks/parquet/writer.go#L142-L146 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Forces all buffered buckets to be written and uploaded.
 
-**How:** _TODO_
+**How:** Locks `w.mu` and calls `flushLocked(ctx)`.
 
-**Why:** _TODO_
+**Why:** Used on periodic timers and shutdown paths so buffered candles aren’t dropped on exit.
 
 ### func (*Writer) Close
 
@@ -139,11 +197,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*Writer) Close" file=<rootDir>/sinks/parquet/writer.go#L148-L150 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Flushes with a background context and returns the result.
 
-**How:** _TODO_
+**How:** Delegates to `Flush(context.Background())`.
 
-**Why:** _TODO_
+**Why:** Simplifies shutdown paths where the caller is already exiting and wants a best-effort flush.
 
 ### func (*Writer) flushLocked
 
@@ -152,11 +210,17 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*Writer) flushLocked" file=<rootDir>/sinks/parquet/writer.go#L152-L169 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Internal flush implementation that assumes the mutex is already held.
 
-**How:** _TODO_
+**How:**
 
-**Why:** _TODO_
+- Returns early when there are no buckets.
+- Iterates every `(timeframe|scope)` bucket:
+  - calls `writeBucket(...)` for non-empty buckets
+  - truncates the slice to length 0 to reuse allocated capacity
+- Updates `lastFlush` to `time.Now()`.
+
+**Why:** Centralizing flush logic avoids duplicate “iterate buckets and upload” code across append/flush paths.
 
 ### func (*Writer) writeBucket
 
@@ -165,11 +229,15 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*Writer) writeBucket" file=<rootDir>/sinks/parquet/writer.go#L171-L194 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Encodes a slice of `candleRow` into a Parquet file and uploads it to S3.
 
-**How:** _TODO_
+**How:**
 
-**Why:** _TODO_
+1. Writes Parquet rows into an in-memory `bytes.Buffer` using a generic writer with Snappy compression.
+2. Computes the destination object key via `objectKey(timeframe, scope)`.
+3. Uploads the buffer using `UploadWithContext` and sets `ContentType` to `application/octet-stream`.
+
+**Why:** This is the I/O boundary: it turns in-memory rows into durable objects. Keeping it isolated makes failures easier to reason about and retry.
 
 ### func (*Writer) objectKey
 
@@ -178,11 +246,15 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*Writer) objectKey" file=<rootDir>/sinks/parquet/writer.go#L196-L201 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Builds a partitioned object key for parquet uploads.
 
-**How:** _TODO_
+**How:** The key layout is:
 
-**Why:** _TODO_
+`<prefix>/timeframe=<timeframe>/scope=<scope>/date=<YYYY-MM-DD>/candles-<nanos>.parquet`
+
+It trims any trailing `/` from the prefix and uses UTC dates for stable partitioning.
+
+**Why:** A partitioned layout makes it easy for downstream query engines to prune scans by timeframe/scope/date.
 
 ### func bucketKey
 
@@ -191,11 +263,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func bucketKey" file=<rootDir>/sinks/parquet/writer.go#L203-L205 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Creates a stable map key for buffering buckets.
 
-**How:** _TODO_
+**How:** Concatenates `timeframe` and `scope` with a delimiter (`|`).
 
-**Why:** _TODO_
+**Why:** Using a single string key keeps the buckets map simple and avoids nested maps.
 
 ### func splitBucketKey
 
@@ -204,9 +276,8 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func splitBucketKey" file=<rootDir>/sinks/parquet/writer.go#L207-L213 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Inverse of `bucketKey`: splits a bucket key back into `(timeframe, scope)`.
 
-**How:** _TODO_
+**How:** Uses `strings.SplitN(key, "|", 2)` and falls back to `(key, "unknown")` if parsing fails.
 
-**Why:** _TODO_
-
+**Why:** Flush needs `(timeframe, scope)` to decide the output object key layout for each bucket.

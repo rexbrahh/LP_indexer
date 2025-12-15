@@ -6,11 +6,25 @@ This page is an **annotated source reference**. Code blocks are imported from th
 
 ## What this file is
 
-_TODO: one-paragraph summary of responsibility and boundaries._
+`ingestor/helius/config.go` defines the runtime configuration for the Helius
+ingestor components (LaserStream gRPC + WebSocket endpoints).
+
+It provides:
+
+- default values for timeouts/backoff/replay
+- canonical environment variable names (`HELIUS_*`)
+- validation so misconfiguration fails fast
 
 ## Why this file exists
 
-_TODO: architectural motivation and why this logic lives here (vs elsewhere)._ 
+Helius is used as a secondary ingest source (or as a fallback) and requires
+several environment-specific values (endpoints + API key).
+
+Centralizing config in one file:
+
+- keeps CLI/service wiring simple
+- ensures reconnection behavior is consistent
+- makes it easy to reason about replay windows across providers
 
 ## Full source
 
@@ -24,22 +38,22 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="package helius" file=<rootDir>/ingestor/helius/config.go#L1-L1 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Declares the `helius` ingestion package.
 
-**How:** _TODO_
+**How:** This package provides clients that connect to Helius endpoints and emit canonical updates for the rest of the pipeline.
 
-**Why:** _TODO_
+**Why:** Keeping Helius-specific transport logic isolated makes failover and future provider additions straightforward.
 
 ### imports
 
 ```go title="imports" file=<rootDir>/ingestor/helius/config.go#L3-L9 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Dependencies for env parsing, numeric conversion, and duration handling.
 
-**How:** _TODO_
+**How:** Uses `os.Getenv` for configuration, `strconv.Atoi` for numeric env vars, and `time.Duration` for timeouts/backoffs.
 
-**Why:** _TODO_
+**Why:** Keeping config parsing stdlib-only keeps this package light and reusable.
 
 ### const (defaultBackoff, defaultReplayWindow, defaultTimeout, envHeliusAPIKey, envHeliusBackoffMS, envHeliusGRPC, envHeliusReplaySlots, envHeliusTimeoutMS, envHeliusWS)
 
@@ -48,11 +62,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="const (defaultBackoff, defaultReplayWindow, defaultTimeout, envHeliusAPIKey, envHeliusBackoffMS, envHeliusGRPC, envHeliusReplaySlots, envHeliusTimeoutMS, envHeliusWS)" file=<rootDir>/ingestor/helius/config.go#L11-L21 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Default values and canonical environment variable names for Helius configuration.
 
-**How:** _TODO_
+**How:** Defaults are used by `DefaultConfig()`; env var constants are used by `FromEnv()` to load endpoint/API key and optional timing knobs.
 
-**Why:** _TODO_
+**Why:** Env vars are the operational interface. Centralizing names prevents drift and makes runbooks reliable.
 
 ### type (Config)
 
@@ -61,11 +75,15 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="type (Config)" file=<rootDir>/ingestor/helius/config.go#L23-L34 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** `Config` holds all runtime parameters needed to connect and reconnect to Helius.
 
-**How:** _TODO_
+**How:** It includes:
 
-**Why:** _TODO_
+- endpoints (`GRPCEndpoint`, `WSEndpoint`) + `APIKey`
+- reconnect policy (`RequestTimeout`, `ReconnectBackoff`, `ReplaySlots`)
+- `ProgramFilters` (friendly name → program ID), typically sourced from the same config used for Geyser
+
+**Why:** The ingest client needs both connectivity info and retry/replay policy to be resilient under provider/network instability.
 
 ### func DefaultConfig
 
@@ -74,11 +92,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func DefaultConfig" file=<rootDir>/ingestor/helius/config.go#L36-L44 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Returns a config struct with sensible defaults for optional fields.
 
-**How:** _TODO_
+**How:** Populates timeout/backoff/replay values while leaving endpoints and API key empty.
 
-**Why:** _TODO_
+**Why:** Defaults provide predictable behavior in dev/prod while still requiring environment-specific connection values to be configured explicitly.
 
 ### func (*Config) Validate
 
@@ -87,11 +105,16 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*Config) Validate" file=<rootDir>/ingestor/helius/config.go#L46-L77 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Validates required fields and checks duration bounds.
 
-**How:** _TODO_
+**How:** Ensures:
 
-**Why:** _TODO_
+- config is non-nil
+- endpoints and API key are set
+- request timeout/backoff are positive
+- replay slots is >= 1
+
+**Why:** Long-running ingestors should fail fast on missing endpoints/keys rather than starting a stream that will immediately error.
 
 ### func FromEnv
 
@@ -100,9 +123,17 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func FromEnv" file=<rootDir>/ingestor/helius/config.go#L79-L112 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Builds a validated `Config` from environment variables.
 
-**How:** _TODO_
+**How:** The function:
 
-**Why:** _TODO_
+1. Starts from `DefaultConfig()`.
+2. Reads required fields from:
+   - `HELIUS_GRPC`, `HELIUS_WS`, `HELIUS_API_KEY`
+3. Applies optional overrides for:
+   - request timeout (`HELIUS_TIMEOUT_MS`)
+   - reconnect backoff (`HELIUS_BACKOFF_MS`)
+   - replay window (`HELIUS_REPLAY_SLOTS`)
+4. Validates and returns the config.
 
+**Why:** This is the canonical configuration surface for running the Helius ingestor components in different environments.

@@ -6,11 +6,25 @@ This page is an **annotated source reference**. Code blocks are imported from th
 
 ## What this file is
 
-_TODO: one-paragraph summary of responsibility and boundaries._
+`sinks/nats/publisher.go` implements a **canonical event publisher** for NATS JetStream.
+
+It wraps:
+
+- a NATS connection (`*nats.Conn`)
+- a JetStream context (`nats.JetStreamContext`)
+
+and exposes typed helpers to publish protobuf messages (`SwapEvent`, `BlockHead`, `TxMeta`, `PoolSnapshot`, `Candle`) to the repo’s subject conventions with deterministic-ish message IDs.
 
 ## Why this file exists
 
-_TODO: architectural motivation and why this logic lives here (vs elsewhere)._ 
+Publishing to JetStream has a few recurring requirements:
+
+- consistent subject naming (`<root>.<program>.swap`, `<root>.blocks.head`, …)
+- consistent headers (`Content-Type`, `Nats-Msg-Id` for dedupe)
+- consistent timeout behavior (avoid hanging publishes)
+- consistent stream expectations (publish into the configured stream)
+
+Centralizing these rules reduces duplicated “publish boilerplate” across ingestors/tools and makes correctness constraints reviewable in one place.
 
 ## Full source
 
@@ -24,22 +38,25 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="package natsx" file=<rootDir>/sinks/nats/publisher.go#L1-L1 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Declares the publisher implementation in the shared `natsx` package.
 
-**How:** _TODO_
+**How:** Producers construct a `Publisher` via `NewPublisher(cfg)` and call the typed `Publish*` helpers.
 
-**Why:** _TODO_
+**Why:** A single publishing implementation prevents subject/message-id drift across producers.
 
 ### imports
 
 ```go title="imports" file=<rootDir>/sinks/nats/publisher.go#L3-L13 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Publisher dependencies: context/timeouts, protobuf encoding, NATS client, and canonical message types.
 
-**How:** _TODO_
+**How:**
 
-**Why:** _TODO_
+- `proto.Marshal` encodes messages into bytes.
+- `nats.Msg` headers are used for `Nats-Msg-Id` and content type.
+
+**Why:** Publishing is “format + routing + reliability”; these imports cover those concerns.
 
 ### type (Publisher)
 
@@ -48,11 +65,15 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="type (Publisher)" file=<rootDir>/sinks/nats/publisher.go#L15-L20 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** `Publisher` is a stateful wrapper around a JetStream connection.
 
-**How:** _TODO_
+**How:** It stores:
 
-**Why:** _TODO_
+- the validated `Config` (URL/stream/root/timeout)
+- the underlying `*nats.Conn` (for draining/closing)
+- the JetStream context used to publish
+
+**Why:** The publisher is used in long-running services and should manage connection lifecycle explicitly.
 
 ### func NewPublisher
 
@@ -61,11 +82,17 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func NewPublisher" file=<rootDir>/sinks/nats/publisher.go#L22-L41 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Constructs a publisher by validating config, dialing NATS, and creating a JetStream context.
 
-**How:** _TODO_
+**How:**
 
-**Why:** _TODO_
+1. Validate config (required fields, sane timeout).
+2. `nats.Connect(cfg.URL, ...)` with a client name.
+3. `conn.JetStream()` to obtain the publishing context.
+
+If JetStream context creation fails, the connection is closed to avoid leaking resources.
+
+**Why:** All publish helpers assume JetStream is available; construction is the right place to enforce that invariant.
 
 ### func (*Publisher) Close
 
@@ -74,11 +101,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*Publisher) Close" file=<rootDir>/sinks/nats/publisher.go#L43-L50 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Shuts down the publisher’s connection to NATS.
 
-**How:** _TODO_
+**How:** Uses `Drain()` (best-effort) to flush pending traffic, then closes the connection.
 
-**Why:** _TODO_
+**Why:** Long-running services should release resources cleanly on shutdown and avoid dropping in-flight publishes.
 
 ### func (*Publisher) PublishSwap
 
@@ -87,11 +114,15 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*Publisher) PublishSwap" file=<rootDir>/sinks/nats/publisher.go#L52-L60 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Publishes a `dexv1.SwapEvent` to `<subjectRoot>.<program>.swap`.
 
-**How:** _TODO_
+**How:**
 
-**Why:** _TODO_
+- Subject segment is derived from `programSegment(programID)` so consumers can filter by DEX.
+- A message ID is constructed from slot/sig/index (currently with a hard-coded `501` chain ID prefix).
+- Delegates to `publish(...)` to apply headers, timeouts, and stream expectations.
+
+**Why:** Swaps are the highest-volume canonical events; providing a dedicated helper avoids repeated subject/id boilerplate and enforces consistent routing.
 
 ### func (*Publisher) PublishBlockHead
 
@@ -100,11 +131,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*Publisher) PublishBlockHead" file=<rootDir>/sinks/nats/publisher.go#L62-L70 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Publishes `dexv1.BlockHead` updates to `<subjectRoot>.blocks.head`.
 
-**How:** _TODO_
+**How:** Uses the slot as the message ID key (again with `501:` prefix) and delegates to `publish(...)`.
 
-**Why:** _TODO_
+**Why:** Block heads are used by consumers to map `slot -> timestamp` and to detect “dead” slots; publishing them centrally helps sinks reconstruct time.
 
 ### func (*Publisher) PublishTxMeta
 
@@ -113,11 +144,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*Publisher) PublishTxMeta" file=<rootDir>/sinks/nats/publisher.go#L72-L80 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Publishes transaction metadata (`dexv1.TxMeta`) to `<subjectRoot>.tx.meta`.
 
-**How:** _TODO_
+**How:** Uses `slot + sig` as the message ID and delegates to `publish(...)`.
 
-**Why:** _TODO_
+**Why:** Tx metadata is a low-frequency enrichment channel; keeping it standardized lets sinks choose to ignore or consume it without changing producers.
 
 ### func (*Publisher) PublishPoolSnapshot
 
@@ -126,11 +157,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*Publisher) PublishPoolSnapshot" file=<rootDir>/sinks/nats/publisher.go#L82-L90 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Publishes pool snapshot updates (current state) to `<subjectRoot>.pool.snapshot`.
 
-**How:** _TODO_
+**How:** Uses `slot + pool_id` as the message ID and delegates to `publish(...)`.
 
-**Why:** _TODO_
+**Why:** Pool snapshots can be used to materialize a current pool-state table without re-reading raw accounts.
 
 ### func (*Publisher) PublishCandle
 
@@ -139,11 +170,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*Publisher) PublishCandle" file=<rootDir>/sinks/nats/publisher.go#L92-L104 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Publishes a candle message to `<subjectRoot>.candle.<scope>.<timeframe>`.
 
-**How:** _TODO_
+**How:** Determines scope from whether `pool_id` is set, then constructs subject and message ID before calling `publish(...)`.
 
-**Why:** _TODO_
+**Why:** Candles are derived/aggregated events; consistent subject routing makes it easy to subscribe to “all 1m candles” or “pool-scoped candles only”.
 
 ### func (*Publisher) publish
 
@@ -152,11 +183,20 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*Publisher) publish" file=<rootDir>/sinks/nats/publisher.go#L106-L134 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Shared implementation for marshaling a protobuf message and publishing it to JetStream.
 
-**How:** _TODO_
+**How:**
 
-**Why:** _TODO_
+1. Marshal with `proto.Marshal`.
+2. Build a `nats.Msg` and set headers:
+   - `Nats-Msg-Id` (when provided) enables JetStream de-duplication.
+   - `Content-Type` identifies protobuf payloads.
+3. Ensure a timeout via `ensureTimeout`.
+4. Publish synchronously with:
+   - `nats.ExpectStream(p.cfg.Stream)` to prevent accidental cross-stream publishes.
+5. Validate the server ack (if present) matches the expected stream.
+
+**Why:** This is where the repo encodes its “publish contract”: correct stream, bounded latency, deterministic IDs, and explicit content type.
 
 ### func (*Publisher) ensureTimeout
 
@@ -165,11 +205,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*Publisher) ensureTimeout" file=<rootDir>/sinks/nats/publisher.go#L136-L144 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Ensures publish operations have a deadline.
 
-**How:** _TODO_
+**How:** If the parent context already has a deadline (or `PublishTimeout <= 0`), it is reused; otherwise a derived context with timeout is created.
 
-**Why:** _TODO_
+**Why:** Bounded publish latency prevents stuck producers (and helps ensure shutdown paths complete).
 
 ### func (*Publisher) Config
 
@@ -178,11 +218,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*Publisher) Config" file=<rootDir>/sinks/nats/publisher.go#L146-L149 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Returns a copy of the publisher’s configuration.
 
-**How:** _TODO_
+**How:** Simple getter; returns by value.
 
-**Why:** _TODO_
+**Why:** Useful for tests and for debugging/logging current configuration.
 
 ### func (*Publisher) WithTimeout
 
@@ -191,11 +231,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*Publisher) WithTimeout" file=<rootDir>/sinks/nats/publisher.go#L151-L154 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Public wrapper for the internal timeout helper.
 
-**How:** _TODO_
+**How:** Delegates to `ensureTimeout`.
 
-**Why:** _TODO_
+**Why:** Exposes the same timeout semantics for external code paths that want to mirror publisher behavior.
 
 ### var (programSubjectAliases)
 
@@ -204,11 +244,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="var (programSubjectAliases)" file=<rootDir>/sinks/nats/publisher.go#L156-L160 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Maps well-known Solana program IDs to stable, human-readable subject segments.
 
-**How:** _TODO_
+**How:** `programSegment` looks up program IDs here before falling back to sanitization/truncation.
 
-**Why:** _TODO_
+**Why:** Stable subject segments are ergonomic and avoid leaking raw program IDs into every subject string.
 
 ### func programSegment
 
@@ -217,9 +257,12 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func programSegment" file=<rootDir>/sinks/nats/publisher.go#L162-L180 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Converts a program ID into a safe subject path segment.
 
-**How:** _TODO_
+**How:** The function:
 
-**Why:** _TODO_
+1. Returns `"unknown"` for empty IDs.
+2. Uses a stable alias when available.
+3. Otherwise removes unsafe characters (e.g. `.`, spaces, wildcards) and lowercases/truncates to keep subjects small.
 
+**Why:** Subjects are a routing API. Sanitization ensures malicious/invalid program IDs can’t create surprising subject patterns (like injecting wildcards).

@@ -6,11 +6,23 @@ This page is an **annotated source reference**. Code blocks are imported from th
 
 ## What this file is
 
-_TODO: one-paragraph summary of responsibility and boundaries._
+`sinks/parquet/config.go` defines configuration for the **S3-backed Parquet writer**.
+
+It provides:
+
+- defaults for optional writer behavior (flush interval, object prefix, batch sizing)
+- env var names for required S3 credentials/endpoint
+- strict validation for required settings
 
 ## Why this file exists
 
-_TODO: architectural motivation and why this logic lives here (vs elsewhere)._ 
+Parquet output is operationally sensitive: the writer needs correct credentials, a bucket, and an endpoint (often MinIO in local dev).
+
+Centralizing the config contract ensures:
+
+- the parquet sink and any tools share the same environment variable names
+- defaults are applied consistently (avoiding tiny files or overly frequent uploads)
+- missing credentials fail fast with a clear error
 
 ## Full source
 
@@ -24,22 +36,22 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="package parquet" file=<rootDir>/sinks/parquet/config.go#L1-L1 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Declares configuration helpers for the `parquet` sink package.
 
-**How:** _TODO_
+**How:** Services and tools call `FromEnv()` to build a validated `Config`, then pass it into `NewWriter`.
 
-**Why:** _TODO_
+**Why:** S3/Parquet configuration is reused across the long-running sink service and standalone utilities.
 
 ### imports
 
 ```go title="imports" file=<rootDir>/sinks/parquet/config.go#L3-L8 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Stdlib helpers for reading environment variables, parsing numbers, and working with durations.
 
-**How:** _TODO_
+**How:** `os.Getenv` reads settings, `strconv.Atoi` parses numeric overrides (seconds/rows), and `time.Duration` stores flush intervals.
 
-**Why:** _TODO_
+**Why:** Keeping config parsing minimal avoids pulling heavy dependencies into packages that just need a config.
 
 ### const (defaultFlushInterval, defaultPrefix, envAccessKey, envBucket, envEndpoint, envFlushIntervalS, envPrefix, envSecretKey)
 
@@ -48,11 +60,14 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="const (defaultFlushInterval, defaultPrefix, envAccessKey, envBucket, envEndpoint, envFlushIntervalS, envPrefix, envSecretKey)" file=<rootDir>/sinks/parquet/config.go#L10-L20 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Defaults and canonical environment variable names for S3-backed Parquet output.
 
-**How:** _TODO_
+**How:**
 
-**Why:** _TODO_
+- `defaultFlushInterval` and `defaultPrefix` are used by `DefaultConfig()`.
+- `env*` constants define the stable env var names used by `FromEnv()`.
+
+**Why:** Env vars are the operational interface for the parquet writer; centralizing names prevents drift and makes runbooks dependable.
 
 ### type (Config)
 
@@ -61,11 +76,16 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="type (Config)" file=<rootDir>/sinks/parquet/config.go#L22-L32 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** `Config` describes how and where the parquet writer uploads objects.
 
-**How:** _TODO_
+**How:** Fields include:
 
-**Why:** _TODO_
+- endpoint/bucket/credentials for S3-compatible storage
+- an object prefix (namespacing in the bucket)
+- flush + batch sizing controls (`FlushInterval`, `BatchRows`)
+- `Region` (required by the AWS SDK even for many S3-compatible endpoints)
+
+**Why:** The writer needs both connectivity and batching policy to decide when to cut/upload new Parquet objects.
 
 ### func DefaultConfig
 
@@ -74,11 +94,16 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func DefaultConfig" file=<rootDir>/sinks/parquet/config.go#L34-L42 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Returns a config with defaults for optional fields.
 
-**How:** _TODO_
+**How:** Defaults today:
 
-**Why:** _TODO_
+- `Prefix = "dex/"`
+- `FlushInterval = 15m`
+- `BatchRows = 5000`
+- `Region = "us-east-1"`
+
+**Why:** Parquet uploads are typically chunked; these defaults avoid creating tiny files while still flushing periodically.
 
 ### func (Config) Validate
 
@@ -87,11 +112,16 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (Config) Validate" file=<rootDir>/sinks/parquet/config.go#L44-L71 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Validates the config and returns a descriptive error for missing/invalid fields.
 
-**How:** _TODO_
+**How:** Ensures:
 
-**Why:** _TODO_
+- required S3 fields are present (`Endpoint`, `Bucket`, `AccessKey`, `SecretKey`)
+- `FlushInterval` and `BatchRows` are positive
+- `Prefix` is non-empty (to avoid uploading to the bucket root unintentionally)
+- `Region` is set
+
+**Why:** Failing fast here prevents confusing failures during upload (which can otherwise look like transient S3 issues).
 
 ### func FromEnv
 
@@ -100,9 +130,16 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func FromEnv" file=<rootDir>/sinks/parquet/config.go#L73-L109 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Builds a validated `Config` from environment variables.
 
-**How:** _TODO_
+**How:** The function:
 
-**Why:** _TODO_
+1. Starts from `DefaultConfig()`.
+2. Overwrites fields when env vars are set:
+   - S3 endpoint/bucket/credentials (`S3_*`)
+   - Parquet prefix and flush interval (`PARQUET_PREFIX`, `PARQUET_FLUSH_INTERVAL_S`)
+   - Optional overrides (`PARQUET_BATCH_ROWS`, `PARQUET_REGION`)
+3. Parses numeric env vars with `strconv.Atoi` and converts seconds to `time.Duration`.
+4. Returns `cfg.Validate()` so callers only receive a valid config.
 
+**Why:** This is the canonical configuration surface for the parquet writer/sink, shared across services and tools.

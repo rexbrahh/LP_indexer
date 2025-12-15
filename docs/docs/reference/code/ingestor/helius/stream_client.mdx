@@ -6,11 +6,29 @@ This page is an **annotated source reference**. Code blocks are imported from th
 
 ## What this file is
 
-_TODO: one-paragraph summary of responsibility and boundaries._
+`ingestor/helius/stream_client.go` implements a Yellowstone-compatible gRPC
+streaming client for the **Helius LaserStream** endpoint.
+
+It is shaped to satisfy the `geyser.ClientInterface` so it can be plugged into
+the `FailoverService` as a drop-in fallback source.
+
+It provides:
+
+- TLS + per-RPC `x-api-key` authentication
+- automatic reconnect with configurable backoff and replay window
+- subscription request building for accounts + transactions filtered by program IDs
 
 ## Why this file exists
 
-_TODO: architectural motivation and why this logic lives here (vs elsewhere)._ 
+The failover controller expects a uniform “Connect/Subscribe/Close” interface.
+Helius LaserStream speaks (largely) the same protobuf contract as Yellowstone,
+so we can reuse the existing downstream processor without rewriting it.
+
+This file exists to:
+
+- make Helius usable as a fallback stream source
+- keep reconnection and replay behavior consistent with the primary client
+- centralize authentication and subscription filter construction
 
 ## Full source
 
@@ -24,22 +42,22 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="package helius" file=<rootDir>/ingestor/helius/stream_client.go#L1-L1 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Declares the `helius` ingestion package.
 
-**How:** _TODO_
+**How:** This file provides a LaserStream client that produces `pb.SubscribeUpdate` messages on channels.
 
-**Why:** _TODO_
+**Why:** Keeping Helius transport code isolated allows the same processor/publisher pipeline to be driven by multiple providers.
 
 ### imports
 
 ```go title="imports" file=<rootDir>/ingestor/helius/stream_client.go#L3-L15 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Dependencies for gRPC/TLS streaming, reconnection timing, and basic logging.
 
-**How:** _TODO_
+**How:** `grpc`/`credentials`/`keepalive` establish the connection; `io` detects stream EOF; `pb` is the upstream protobuf contract.
 
-**Why:** _TODO_
+**Why:** The LaserStream client is “dial + subscribe + recv loop”; these are the primitives required for that lifecycle.
 
 ### type (apiKeyAuth)
 
@@ -48,11 +66,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="type (apiKeyAuth)" file=<rootDir>/ingestor/helius/stream_client.go#L17-L19 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Per-RPC credential provider for Helius `x-api-key` authentication.
 
-**How:** _TODO_
+**How:** Used with `grpc.WithPerRPCCredentials(apiKeyAuth{key: ...})`.
 
-**Why:** _TODO_
+**Why:** Helius expects API keys on each call; per-RPC credentials is the idiomatic way to attach auth headers in gRPC.
 
 ### func (apiKeyAuth) GetRequestMetadata
 
@@ -61,11 +79,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (apiKeyAuth) GetRequestMetadata" file=<rootDir>/ingestor/helius/stream_client.go#L21-L23 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Supplies request metadata for authenticated gRPC calls.
 
-**How:** _TODO_
+**How:** Returns `map[string]string{"x-api-key": <key>}`.
 
-**Why:** _TODO_
+**Why:** Ensures every stream/request carries the API key without manual header plumbing.
 
 ### func (apiKeyAuth) RequireTransportSecurity
 
@@ -74,11 +92,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (apiKeyAuth) RequireTransportSecurity" file=<rootDir>/ingestor/helius/stream_client.go#L25-L25 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Declares that these credentials require TLS.
 
-**How:** _TODO_
+**How:** Returns `true`.
 
-**Why:** _TODO_
+**Why:** Prevents API keys from being sent over insecure connections.
 
 ### type (StreamClient)
 
@@ -87,11 +105,15 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="type (StreamClient)" file=<rootDir>/ingestor/helius/stream_client.go#L27-L35 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** `StreamClient` wraps a LaserStream gRPC connection and manages subscription lifecycle.
 
-**How:** _TODO_
+**How:** It stores:
 
-**Why:** _TODO_
+- validated `*Config` (endpoints, API key, replay/backoff, program filters)
+- a `*grpc.ClientConn` + generated `pb.GeyserClient`
+- an internal `context.Context` + `cancel` used to stop background goroutines
+
+**Why:** The failover service expects a long-lived client with explicit lifecycle hooks.
 
 ### func NewStreamClient
 
@@ -100,11 +122,16 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func NewStreamClient" file=<rootDir>/ingestor/helius/stream_client.go#L37-L55 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Validates config and constructs a LaserStream client.
 
-**How:** _TODO_
+**How:** Ensures:
 
-**Why:** _TODO_
+- config is non-nil and validates
+- `ProgramFilters` is non-empty (we need at least one program to subscribe to)
+
+Then creates a cancellable background context for the client.
+
+**Why:** Fail fast on missing program filters/endpoints rather than starting a stream that will deliver no useful updates.
 
 ### func (*StreamClient) Connect
 
@@ -113,11 +140,18 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*StreamClient) Connect" file=<rootDir>/ingestor/helius/stream_client.go#L57-L82 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Establishes the gRPC connection to the LaserStream endpoint.
 
-**How:** _TODO_
+**How:** Dials with:
 
-**Why:** _TODO_
+- TLS transport credentials
+- keepalive pings
+- a large max receive size (1GB)
+- per-RPC `x-api-key` auth
+
+On success it initializes `pb.NewGeyserClient(conn)`.
+
+**Why:** Connection parameters and auth headers are a major source of runtime failures; centralizing them keeps behavior consistent.
 
 ### func (*StreamClient) Subscribe
 
@@ -126,11 +160,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*StreamClient) Subscribe" file=<rootDir>/ingestor/helius/stream_client.go#L84-L91 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Starts a subscription goroutine and returns update + error channels.
 
-**How:** _TODO_
+**How:** Allocates buffered channels and runs `subscribeLoop(startSlot, ...)`.
 
-**Why:** _TODO_
+**Why:** Keeps the caller/service loop simple: it can select over channels without owning reconnection behavior.
 
 ### func (*StreamClient) subscribeLoop
 
@@ -139,11 +173,17 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*StreamClient) subscribeLoop" file=<rootDir>/ingestor/helius/stream_client.go#L93-L135 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Implements the “subscribe, recv, reconnect” loop with replay.
 
-**How:** _TODO_
+**How:** Similar to the Geyser client:
 
-**Why:** _TODO_
+1. Computes `replaySlot = currentSlot - cfg.ReplaySlots` (bounded at 0).
+2. Builds a `SubscribeRequest` for that slot.
+3. Opens a stream, sends the request, and processes received updates.
+4. Tracks the highest slot observed and uses it as the next `currentSlot`.
+5. Sleeps `cfg.ReconnectBackoff` and retries.
+
+**Why:** LaserStream connections can drop; replay + backoff minimize gaps and avoid tight retry loops.
 
 ### func (*StreamClient) buildSubscribeRequest
 
@@ -152,11 +192,16 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*StreamClient) buildSubscribeRequest" file=<rootDir>/ingestor/helius/stream_client.go#L137-L175 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Builds the LaserStream subscription request.
 
-**How:** _TODO_
+**How:** The request includes:
 
-**Why:** _TODO_
+- account filters by owner program ID (one entry per configured program)
+- a transactions filter (`AccountInclude`) with all program IDs so transaction updates are received for those programs
+- slot + block meta updates for timestamp/finality context
+- `CommitmentLevel_CONFIRMED` and `FromSlot = startSlot`
+
+**Why:** Decoding swaps requires transaction updates, and enriching swaps requires account updates. Building both filters ensures the downstream processor has the inputs it needs.
 
 ### func (*StreamClient) processStream
 
@@ -165,11 +210,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*StreamClient) processStream" file=<rootDir>/ingestor/helius/stream_client.go#L177-L207 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Receives updates from the stream and forwards them to the updates channel.
 
-**How:** _TODO_
+**How:** Calls `stream.Recv()` in a loop until EOF or error, tracks the highest slot via `extractSlot`, and forwards updates into the buffered channel.
 
-**Why:** _TODO_
+**Why:** Separating stream processing from reconnect logic keeps responsibilities clear and makes slot tracking reusable.
 
 ### func extractSlot
 
@@ -178,11 +223,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func extractSlot" file=<rootDir>/ingestor/helius/stream_client.go#L209-L224 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Extracts a slot number from an update variant.
 
-**How:** _TODO_
+**How:** Switches on the update oneof and returns the appropriate slot field; returns 0 for unsupported variants.
 
-**Why:** _TODO_
+**Why:** Slot tracking is used to resume/replay from a reasonable point after reconnect.
 
 ### func (*StreamClient) Close
 
@@ -191,11 +236,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*StreamClient) Close" file=<rootDir>/ingestor/helius/stream_client.go#L226-L234 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Stops the client and closes the underlying gRPC connection.
 
-**How:** _TODO_
+**How:** Cancels the client context and closes the connection if present.
 
-**Why:** _TODO_
+**Why:** Ensures background goroutines exit and resources are released on shutdown/failover transitions.
 
 ### func (*StreamClient) Name
 
@@ -204,9 +249,8 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*StreamClient) Name" file=<rootDir>/ingestor/helius/stream_client.go#L236-L236 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Returns a stable name for this ingest source.
 
-**How:** _TODO_
+**How:** Always returns `"helius"`.
 
-**Why:** _TODO_
-
+**Why:** The failover controller and metrics label sources by name.

@@ -6,11 +6,31 @@ This page is an **annotated source reference**. Code blocks are imported from th
 
 ## What this file is
 
-_TODO: one-paragraph summary of responsibility and boundaries._
+`ingestor/helius/client.go` implements a higher-level Helius ingestor client that
+turns upstream `pb.SubscribeUpdate` messages into a **canonical update stream**
+for the rest of the pipeline.
+
+It:
+
+- manages the lifecycle of an underlying `streamClient` (LaserStream gRPC)
+- feeds account + block meta into the shared swap decoder
+- decodes swap transactions into `dexv1.SwapEvent`
+- emits canonical updates as a small union type (`Update`)
+- tracks coarse health signals (`HealthSnapshot`) for failover/monitoring
 
 ## Why this file exists
 
-_TODO: architectural motivation and why this logic lives here (vs elsewhere)._ 
+The failover story benefits from a provider client that can answer:
+
+- “are we currently receiving updates?”
+- “what is the latest slot observed?”
+- “what kind of canonical events can we produce?”
+
+This wrapper client exists to:
+
+- hide upstream protobuf details from downstream consumers
+- standardize the output into a small, typed set of canonical messages
+- provide a simple health snapshot for controllers/dashboards
 
 ## Full source
 
@@ -24,22 +44,22 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="package helius" file=<rootDir>/ingestor/helius/client.go#L1-L1 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Declares the `helius` ingestion package.
 
-**How:** _TODO_
+**How:** This file defines a high-level client that consumes provider updates and emits canonical `dexv1` messages via an `Update` channel.
 
-**Why:** _TODO_
+**Why:** Keeping provider-specific code in one package prevents it from leaking into decoders/sinks and makes failover composition easier.
 
 ### imports
 
 ```go title="imports" file=<rootDir>/ingestor/helius/client.go#L3-L14 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Dependencies for canonical protobuf messages, shared decoding, and concurrency control.
 
-**How:** _TODO_
+**How:** Uses `swapdecoder` for swap decoding, `common.ConvertTxMeta` for canonical tx meta, and a mutex to safely publish health snapshots.
 
-**Why:** _TODO_
+**Why:** The client owns concurrent goroutines (run loop + callers reading health), so state needs synchronization.
 
 ### type (Update)
 
@@ -48,11 +68,15 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="type (Update)" file=<rootDir>/ingestor/helius/client.go#L16-L22 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Canonical union container for emitted updates.
 
-**How:** _TODO_
+**How:** Exactly one pointer field should be non-nil:
 
-**Why:** _TODO_
+- `BlockHead` for slot→time/finality context
+- `TxMeta` for tx-wide metadata (logs, CU usage)
+- `Swap` for decoded swap events
+
+**Why:** This keeps the outbound channel type stable and minimal while still allowing multiple canonical message kinds to flow through the same pipeline.
 
 ### type (HealthSnapshot)
 
@@ -61,11 +85,16 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="type (HealthSnapshot)" file=<rootDir>/ingestor/helius/client.go#L24-L35 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Coarse health information about the client’s current streaming status.
 
-**How:** _TODO_
+**How:** Fields capture:
 
-**Why:** _TODO_
+- `LastHeartbeat`: time of last successful message
+- `LastSlot`: highest slot seen
+- `Healthy`: whether the client currently considers itself live
+- `Source`: which channel is producing updates (currently `"grpc"`)
+
+**Why:** Failover controllers and dashboards need a simple signal, not detailed stream internals.
 
 ### type (Client)
 
@@ -74,11 +103,17 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="type (Client)" file=<rootDir>/ingestor/helius/client.go#L37-L49 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** `Client` owns the lifecycle of Helius connections and produces canonical updates.
 
-**How:** _TODO_
+**How:** It stores:
 
-**Why:** _TODO_
+- validated `*Config`
+- a mutex-protected `HealthSnapshot`
+- a shared `swapdecoder.Decoder` instance (slot timestamps + pool metadata)
+- a cancel function for stopping the run loop
+- `newStream`: injectable constructor for the underlying gRPC stream client (for tests)
+
+**Why:** The client needs to manage internal goroutines and expose health safely to callers.
 
 ### type (streamClient)
 
@@ -87,11 +122,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="type (streamClient)" file=<rootDir>/ingestor/helius/client.go#L51-L55 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Interface for the underlying upstream stream implementation.
 
-**How:** _TODO_
+**How:** Matches the minimal lifecycle needed by `run`: connect, subscribe, close.
 
-**Why:** _TODO_
+**Why:** Allows dependency injection (e.g. fake streams in tests) and decouples the wrapper client from a concrete gRPC implementation.
 
 ### func NewClient
 
@@ -100,11 +135,15 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func NewClient" file=<rootDir>/ingestor/helius/client.go#L57-L72 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Validates configuration and constructs a high-level Helius client.
 
-**How:** _TODO_
+**How:** Initializes:
 
-**Why:** _TODO_
+- `health.Healthy = false`
+- a new swap decoder (`swapdecoder.New(nil)` creates its own slot cache)
+- `newStream` to construct a real `StreamClient` by default
+
+**Why:** Construction is the right time to fail fast on missing endpoints/API keys before starting background goroutines.
 
 ### func (*Client) Start
 
@@ -113,11 +152,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*Client) Start" file=<rootDir>/ingestor/helius/client.go#L74-L85 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Starts streaming and returns update + error channels.
 
-**How:** _TODO_
+**How:** Creates a derived context with `context.WithCancel`, stores the cancel on the client, and runs `c.run(...)` in a goroutine.
 
-**Why:** _TODO_
+**Why:** The caller can cancel the stream via `Close()` and can consume canonical updates via channels without owning reconnect logic.
 
 ### func (*Client) Close
 
@@ -126,11 +165,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*Client) Close" file=<rootDir>/ingestor/helius/client.go#L87-L96 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Stops the client and releases resources.
 
-**How:** _TODO_
+**How:** Cancels the stored run-loop context (if present) under a mutex.
 
-**Why:** _TODO_
+**Why:** Safe-to-call shutdown simplifies integration with services and tests.
 
 ### func (*Client) Health
 
@@ -139,11 +178,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*Client) Health" file=<rootDir>/ingestor/helius/client.go#L98-L103 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Returns a copy of the current health snapshot.
 
-**How:** _TODO_
+**How:** Reads `c.health` under a read lock.
 
-**Why:** _TODO_
+**Why:** Exposes health safely to other goroutines without leaking internal synchronization details.
 
 ### func (*Client) setHealth
 
@@ -152,11 +191,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*Client) setHealth" file=<rootDir>/ingestor/helius/client.go#L105-L109 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Internal helper for mutating health under a lock.
 
-**How:** _TODO_
+**How:** Executes a caller-provided function while holding the write lock.
 
-**Why:** _TODO_
+**Why:** Keeps health updates concise and reduces repeated lock/unlock boilerplate.
 
 ### func (*Client) setCancel
 
@@ -165,11 +204,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*Client) setCancel" file=<rootDir>/ingestor/helius/client.go#L111-L115 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Stores the current run-loop cancel function.
 
-**How:** _TODO_
+**How:** Writes `c.cancel` under a mutex.
 
-**Why:** _TODO_
+**Why:** Allows `Close()` to stop the running goroutine reliably.
 
 ### func (*Client) run
 
@@ -178,11 +217,19 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*Client) run" file=<rootDir>/ingestor/helius/client.go#L117-L191 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Main run loop that owns the upstream stream lifecycle and emits canonical updates.
 
-**How:** _TODO_
+**How:** The loop:
 
-**Why:** _TODO_
+1. Constructs the underlying `streamClient` (by default `NewStreamClient`).
+2. Connects and subscribes starting from `startSlot`.
+3. Marks health as healthy and sets `Source = "grpc"`.
+4. Selects over:
+   - context cancellation → mark unhealthy and exit
+   - upstream errors → mark unhealthy, forward error
+   - upstream updates → update `LastHeartbeat`/`LastSlot`, then call `handleSubscribeUpdate`
+
+**Why:** Separating this loop from the concrete gRPC client makes it easy to add additional sources (e.g. WebSocket) in the future while preserving the same canonical output.
 
 ### func (*Client) handleSubscribeUpdate
 
@@ -191,11 +238,22 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*Client) handleSubscribeUpdate" file=<rootDir>/ingestor/helius/client.go#L193-L227 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Translates an upstream `SubscribeUpdate` into zero or more canonical `Update` messages.
 
-**How:** _TODO_
+**How:** Handles relevant update types:
 
-**Why:** _TODO_
+- **Block meta**:
+  - feeds the decoder (`decoder.HandleBlockMeta`)
+  - emits a canonical `dexv1.BlockHead` (`Status = "confirmed"`, `TsSec` when present)
+- **Account**:
+  - feeds the decoder (`decoder.HandleAccount`) to cache pool metadata
+- **Transaction**:
+  - emits a canonical `TxMeta` via `common.ConvertTxMeta`
+  - decodes swaps via `decoder.DecodeTransaction` and emits each swap event
+
+All other update types are ignored.
+
+**Why:** This is the boundary where provider-specific updates become provider-agnostic canonical protobuf messages.
 
 ### func (*Client) sendUpdate
 
@@ -204,11 +262,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*Client) sendUpdate" file=<rootDir>/ingestor/helius/client.go#L229-L234 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Sends an `Update` on the output channel while respecting cancellation.
 
-**How:** _TODO_
+**How:** Uses a `select` between `out <- update` and `ctx.Done()`.
 
-**Why:** _TODO_
+**Why:** Prevents goroutine leaks when the caller stops consuming updates or the context is cancelled.
 
 ### func slotFromUpdate
 
@@ -217,9 +275,8 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func slotFromUpdate" file=<rootDir>/ingestor/helius/client.go#L236-L251 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Extracts a slot number from any of the update variants.
 
-**How:** _TODO_
+**How:** Switches on the update oneof and returns the appropriate slot field; returns 0 for unknown variants.
 
-**Why:** _TODO_
-
+**Why:** Slot tracking drives health reporting and allows operators/controllers to see progress.

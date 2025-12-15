@@ -6,11 +6,26 @@ This page is an **annotated source reference**. Code blocks are imported from th
 
 ## What this file is
 
-_TODO: one-paragraph summary of responsibility and boundaries._
+`bridge/service.go` implements the long-running **JetStream → JetStream forwarder** used during cutovers.
+
+At a high level it:
+
+- connects to a **source** NATS/JetStream and inspects a source stream’s subjects
+- creates durable pull consumers and continuously **fetches** messages (manual ack)
+- maps subjects via `SubjectMapper` (rewrite / drop)
+- publishes messages to a **target** JetStream stream using `ExpectStream`
+- optionally exposes Prometheus metrics via an HTTP endpoint
 
 ## Why this file exists
 
-_TODO: architectural motivation and why this logic lives here (vs elsewhere)._ 
+The canonical pipeline (ingest → decode → publish → sinks/API) is designed to be stable and forward-looking.
+Legacy consumers often need a different subject namespace (or they should not receive certain events at all) while the cutover is in progress.
+
+This file keeps that migration-specific behavior isolated:
+
+- core components don’t need to know about legacy subjects
+- ops can roll out mappings/drops without modifying ingestor/decoder logic
+- forwarding is explicit, observable (metrics), and failure modes are clear (no ack until publish succeeds)
 
 ## Full source
 
@@ -24,22 +39,27 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="package bridge" file=<rootDir>/bridge/service.go#L1-L1 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Declares the `bridge` package that hosts the forwarding service.
 
-**How:** _TODO_
+**How:** The `cmd/bridge` binary imports `bridge` to construct a `Service` and run it with a context.
 
-**Why:** _TODO_
+**Why:** Keeping the bridge runtime in a reusable package makes it easier to test and keeps the entrypoint thin.
 
 ### imports
 
 ```go title="imports" file=<rootDir>/bridge/service.go#L3-L18 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Dependencies for JetStream I/O, metrics, and concurrency control.
 
-**How:** _TODO_
+**How:**
 
-**Why:** _TODO_
+- `nats.go` provides NATS connection + JetStream APIs (pull consumers, publish, metadata).
+- `errgroup` coordinates goroutines with cancellation on first error.
+- `prometheus`/`promauto`/`promhttp` provide metrics registration and HTTP exposition.
+- stdlib packages cover contexts, timing, HTTP server, string sanitization, and error handling.
+
+**Why:** The bridge is primarily “I/O plumbing”: it needs robust cancellation, correct ack/publish semantics, and optional observability without introducing complicated dependencies.
 
 ### type (SubjectMapper)
 
@@ -48,11 +68,14 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="type (SubjectMapper)" file=<rootDir>/bridge/service.go#L20-L23 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** A function that decides how to translate an incoming subject into a subject to publish to, or to drop the message entirely.
 
-**How:** _TODO_
+**How:** The bridge calls `mapper(msg.Subject)` for each message:
 
-**Why:** _TODO_
+- return `(mapped, true)` to publish to `mapped`
+- return `("", false)` to drop (ack the source, do not publish)
+
+**Why:** Cutovers often require selective translation/dropping, and expressing it as a function keeps the forwarding loop simple and testable.
 
 ### type (Option)
 
@@ -61,11 +84,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="type (Option)" file=<rootDir>/bridge/service.go#L25-L26 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Functional option used to customize `Service` construction.
 
-**How:** _TODO_
+**How:** `New(cfg, opts...)` applies each non-nil `Option` to the `Service` before final validation (defaults, mapper setup, metrics).
 
-**Why:** _TODO_
+**Why:** Options let `cmd/bridge` (or tests) override behavior (custom mapper, custom metrics registry) without exploding the constructor signature.
 
 ### const (defaultFetchBatch, defaultFetchWait, defaultPublishTimeout)
 
@@ -74,11 +97,15 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="const (defaultFetchBatch, defaultFetchWait, defaultPublishTimeout)" file=<rootDir>/bridge/service.go#L28-L32 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Default knobs for pull-based consumption and publish timeouts.
 
-**How:** _TODO_
+**How:**
 
-**Why:** _TODO_
+- `defaultFetchBatch` controls how many messages are fetched per pull request.
+- `defaultFetchWait` is the long-poll wait used with `nats.MaxWait`; timeouts are treated as “no messages right now”.
+- `defaultPublishTimeout` bounds how long a publish is allowed to block.
+
+**Why:** These defaults balance throughput (batching) with responsiveness to shutdown (short waits) and avoid indefinite publish hangs.
 
 ### type (Service)
 
@@ -87,11 +114,17 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="type (Service)" file=<rootDir>/bridge/service.go#L34-L44 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Holds bridge configuration and runtime dependencies for forwarding.
 
-**How:** _TODO_
+**How:** Key fields:
 
-**Why:** _TODO_
+- `cfg`: validated `bridge.Config` (URLs, streams, mappings, metrics addr).
+- `mapper`: subject translator (`SubjectMapper`), defaulting to identity.
+- `fetchBatch`/`fetchWait`: pull-consumer fetch tuning.
+- `publishTimeout`: timeout applied to target publishes.
+- `metrics`: optional Prometheus instruments; `metricsServer` controls bind address.
+
+**Why:** Centralizing these knobs in a struct keeps the run loop deterministic and makes it possible to construct the same service from different entrypoints or tests.
 
 ### func New
 
@@ -100,11 +133,22 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func New" file=<rootDir>/bridge/service.go#L46-L89 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Constructs a `Service` from config and options, applying defaults and performing validation.
 
-**How:** _TODO_
+**How:** The constructor:
 
-**Why:** _TODO_
+1. Validates `cfg` early (`cfg.Validate()`).
+2. Seeds a `Service` with defaults (identity mapper, fetch/publish defaults, metrics addr).
+3. Applies options (custom mapper, custom metrics registerer, custom metrics server addr, etc.).
+4. If no custom mapper was provided and `cfg.SubjectMappings` is non-empty, compiles mappings via `mapperFromMappings`.
+5. Ensures required runtime invariants:
+   - `mapper` is not nil
+   - `metrics` is not nil (creates an isolated registry by default)
+   - fetch/publish settings are sane
+
+The result is a ready-to-run service.
+
+**Why:** The bridge should be boring to operate: centralized validation prevents surprises (nil mapper, bad fetch settings) and keeps runtime failures focused on connectivity and JetStream behavior.
 
 ### func WithSubjectMapper
 
@@ -113,11 +157,14 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func WithSubjectMapper" file=<rootDir>/bridge/service.go#L91-L99 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Option to supply a custom subject mapping function.
 
-**How:** _TODO_
+**How:** When `mapper` is non-nil it:
 
-**Why:** _TODO_
+- sets `s.mapper` to the provided mapper
+- marks `s.customMapper = true` so config-file mappings (`cfg.SubjectMappings`) won’t override it
+
+**Why:** This enables programmatic or test-specific mapping logic without depending on YAML files.
 
 ### func WithMetricsRegisterer
 
@@ -126,11 +173,14 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func WithMetricsRegisterer" file=<rootDir>/bridge/service.go#L101-L108 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Option to control where bridge metrics are registered and how they’re gathered.
 
-**How:** _TODO_
+**How:** It sets `s.metrics` using `newServiceMetrics(reg, gatherer)`, which ensures a consistent pair of `(Registerer, Gatherer)`:
 
-**Why:** _TODO_
+- if both are nil, it creates an isolated in-memory registry (safe default)
+- if only one is provided, it attempts to derive the other when possible
+
+**Why:** Prometheus registries are global-ish; using an isolated registry by default avoids “duplicate metric registration” panics in tests or multi-tenant binaries.
 
 ### func WithMetricsServer
 
@@ -139,11 +189,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func WithMetricsServer" file=<rootDir>/bridge/service.go#L110-L117 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Option to configure (or override) the HTTP address where metrics are exposed.
 
-**How:** _TODO_
+**How:** It sets `s.metricsServer` (e.g. `:9090`). If empty, the bridge will not start a metrics HTTP server.
 
-**Why:** _TODO_
+**Why:** Some environments expose metrics via sidecars or separate endpoints; making the server optional keeps the bridge deployable in more contexts.
 
 ### func (*Service) Run
 
@@ -152,11 +202,28 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*Service) Run" file=<rootDir>/bridge/service.go#L119-L202 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Runs the bridge until the context is canceled or an unrecoverable error occurs.
 
-**How:** _TODO_
+**How:** The run loop is:
 
-**Why:** _TODO_
+1. Default `ctx` to `context.Background()` if nil.
+2. Connect to **source** and **target** NATS servers (`nats.Connect`).
+3. Create JetStream contexts for both connections.
+4. Fetch source stream info and extract its configured subject list.
+5. Start an `errgroup` for lifecycle management.
+6. Optionally start a Prometheus HTTP server (`promhttp.HandlerFor`) if `metricsServer` is configured.
+7. For each subject in the source stream:
+   - derive a durable consumer name (`durableName(subject)`)
+   - create a pull subscription bound to the source stream with manual ack
+   - start a goroutine that loops `consumeLoop`
+8. Wait for all goroutines; normalize `context.Canceled` on shutdown.
+
+The bridge uses **manual ack** and only acknowledges source messages after either:
+
+- the message is intentionally dropped by the mapper, or
+- the publish to the target stream succeeds.
+
+**Why:** This structure provides at-least-once forwarding with clear backpressure and shutdown semantics, while keeping the bridge logic explicit and observable.
 
 ### func (*Service) Config
 
@@ -165,11 +232,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*Service) Config" file=<rootDir>/bridge/service.go#L204-L207 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Exposes the service configuration.
 
-**How:** _TODO_
+**How:** Returns the stored `cfg` value by copy (the struct itself is returned).
 
-**Why:** _TODO_
+**Why:** Access to effective config is useful for debugging, tests, or logging without re-reading environment variables.
 
 ### func (*Service) consumeLoop
 
@@ -178,11 +245,16 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*Service) consumeLoop" file=<rootDir>/bridge/service.go#L209-L232 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Continuously fetches messages from a pull subscription and forwards them to the target.
 
-**How:** _TODO_
+**How:**
 
-**Why:** _TODO_
+- It checks `ctx.Err()` on each iteration for responsive shutdown.
+- `sub.Fetch(batch, nats.MaxWait(wait))` long-polls for up to `fetchWait`.
+- `nats.ErrTimeout` is treated as “no messages”; the loop simply continues.
+- Every fetched message is passed to `s.forward(...)`; the first error stops the loop (and cancels the errgroup).
+
+**Why:** Fetching in bounded batches keeps the bridge efficient while still responsive to cancellation and supports high-throughput subject forwarding.
 
 ### func (*Service) forward
 
@@ -191,11 +263,25 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*Service) forward" file=<rootDir>/bridge/service.go#L234-L281 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Forwards a single source JetStream message to the target stream, applying subject mapping and metrics.
 
-**How:** _TODO_
+**How:**
 
-**Why:** _TODO_
+1. If metrics are enabled, it tries to compute source lag via `msg.Metadata().Timestamp`.
+2. It maps the subject via `s.mapper`:
+   - if `ok=false`, it counts a drop and `Ack()`s the source message.
+3. It constructs a new `nats.Msg` with the mapped subject and copies the payload and headers.
+4. It publishes with:
+   - a derived context from `publishContext` (timeout)
+   - `nats.ExpectStream(s.cfg.TargetStream)` to ensure the publish lands in the intended stream
+5. On publish error:
+   - it increments publish error metrics
+   - it returns `context.Canceled` when cancellation was the cause
+6. On success, it `Ack()`s the original source message and increments forwarded metrics.
+
+If publishing fails, the source message is not acknowledged, so JetStream will redeliver it (at-least-once semantics).
+
+**Why:** This function is the correctness boundary: it enforces “don’t ack unless forwarded or intentionally dropped” and centralizes metrics so the rest of the loop stays simple.
 
 ### func (*Service) publishContext
 
@@ -204,11 +290,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*Service) publishContext" file=<rootDir>/bridge/service.go#L283-L288 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Creates a publish context with an optional timeout.
 
-**How:** _TODO_
+**How:** If `publishTimeout <= 0`, it returns the parent context and a no-op cancel. Otherwise it returns `context.WithTimeout(parent, publishTimeout)`.
 
-**Why:** _TODO_
+**Why:** Publishing should not hang indefinitely; a timeout bounds latency and ensures the service can shut down promptly under failure conditions.
 
 ### func collectSubjects
 
@@ -217,11 +303,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func collectSubjects" file=<rootDir>/bridge/service.go#L290-L298 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Extracts the configured subject list from a JetStream stream config.
 
-**How:** _TODO_
+**How:** If `cfg.Subjects` is non-empty, it returns a copy of that slice; otherwise it returns nil.
 
-**Why:** _TODO_
+**Why:** Returning a copy avoids accidental mutation of the stream config object and makes the bridge’s subject list explicit.
 
 ### func defaultSubjectMapper
 
@@ -230,11 +316,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func defaultSubjectMapper" file=<rootDir>/bridge/service.go#L300-L302 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** The identity subject mapper.
 
-**How:** _TODO_
+**How:** Returns `(subject, true)` meaning “publish to the same subject; do not drop”.
 
-**Why:** _TODO_
+**Why:** Most of the time the bridge forwards without transformation; an identity mapper is a simple and explicit default.
 
 ### func durableName
 
@@ -243,11 +329,17 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func durableName" file=<rootDir>/bridge/service.go#L304-L321 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Derives a JetStream durable consumer name from a subject string.
 
-**How:** _TODO_
+**How:** It:
 
-**Why:** _TODO_
+- replaces characters that are common in subjects but awkward in durable names (`.`, `*`, `>`, space, `:`) with `_`
+- trims leading/trailing `_`
+- falls back to `all` if the result is empty
+- truncates to 64 characters
+- prefixes with `bridge_` for namespace clarity
+
+**Why:** The bridge creates one durable pull consumer per subject; durable names must be stable, valid, and bounded in length to avoid JetStream naming issues.
 
 ### func cloneHeader
 
@@ -256,11 +348,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func cloneHeader" file=<rootDir>/bridge/service.go#L323-L334 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Deep-copies an incoming NATS header map.
 
-**How:** _TODO_
+**How:** It allocates a new `nats.Header` and copies each slice of values so the published message does not share backing arrays with the source message.
 
-**Why:** _TODO_
+**Why:** Defensive copying avoids accidental mutation/aliasing bugs when messages are forwarded across connections and goroutines.
 
 ### type (serviceMetrics)
 
@@ -269,11 +361,15 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="type (serviceMetrics)" file=<rootDir>/bridge/service.go#L336-L342 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Bundles the Prometheus instruments used by the bridge.
 
-**How:** _TODO_
+**How:** It tracks:
 
-**Why:** _TODO_
+- counters for forwarded messages, dropped messages, and publish errors (labelled by subject)
+- a gauge for “source lag” in seconds (labelled by subject)
+- the `Gatherer` used to expose metrics via HTTP
+
+**Why:** Metrics provide operational confidence during cutover: you want to know what’s being forwarded, what’s being dropped, and whether the bridge is keeping up.
 
 ### func newServiceMetrics
 
@@ -282,11 +378,22 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func newServiceMetrics" file=<rootDir>/bridge/service.go#L344-L400 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Creates a `serviceMetrics` instance and ensures a consistent registry/gatherer pairing.
 
-**How:** _TODO_
+**How:** It handles three cases:
 
-**Why:** _TODO_
+- neither `reg` nor `gatherer` provided → create a new `prometheus.Registry` and use it for both
+- only `reg` provided → derive a `Gatherer` when possible; otherwise fall back to `prometheus.DefaultGatherer`
+- only `gatherer` provided → derive a `Registerer` when possible; otherwise create a new `prometheus.Registry`
+
+It then registers:
+
+- `forwarded`, `dropped`, and `publishErr` counters
+- a `sourceLag` gauge
+
+All metrics use the `dex_bridge_*` namespace/subsystem and names defined in `observability`.
+
+**Why:** Metric registration is a common source of friction in tests and multi-binary repos; this helper makes metric wiring deterministic and keeps the service code focused on forwarding.
 
 ### func (*serviceMetrics) incForwarded
 
@@ -295,11 +402,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*serviceMetrics) incForwarded" file=<rootDir>/bridge/service.go#L402-L404 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Increments the “forwarded” counter for a subject.
 
-**How:** _TODO_
+**How:** Calls `CounterVec.WithLabelValues(subject).Inc()`.
 
-**Why:** _TODO_
+**Why:** Counting forwards by subject makes it easy to verify cutover progress and detect unexpected routing.
 
 ### func (*serviceMetrics) incDropped
 
@@ -308,11 +415,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*serviceMetrics) incDropped" file=<rootDir>/bridge/service.go#L406-L408 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Increments the “dropped” counter for a subject.
 
-**How:** _TODO_
+**How:** Calls `CounterVec.WithLabelValues(subject).Inc()` when the mapper returns `ok=false`.
 
-**Why:** _TODO_
+**Why:** Drops are often intentional during cutover, but you still want to observe their rate and which subjects are being suppressed.
 
 ### func (*serviceMetrics) incPublishError
 
@@ -321,11 +428,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*serviceMetrics) incPublishError" file=<rootDir>/bridge/service.go#L410-L412 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Increments the “publish errors” counter for a mapped subject.
 
-**How:** _TODO_
+**How:** Called when `targetJS.PublishMsg` returns a non-nil error.
 
-**Why:** _TODO_
+**Why:** Publish failures are the main cause of backpressure and redelivery; tracking them highlights target-side issues quickly.
 
 ### func (*serviceMetrics) observeLag
 
@@ -334,9 +441,8 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*serviceMetrics) observeLag" file=<rootDir>/bridge/service.go#L414-L416 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Updates the “source lag” gauge for a subject.
 
-**How:** _TODO_
+**How:** Sets the gauge to the computed lag in seconds (`time.Since(metadata.Timestamp)`), clamped to non-negative values.
 
-**Why:** _TODO_
-
+**Why:** Lag is the simplest “are we keeping up?” signal; it helps differentiate “no messages” from “messages but the bridge is behind”.

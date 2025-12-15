@@ -6,11 +6,29 @@ This page is an **annotated source reference**. Code blocks are imported from th
 
 ## What this file is
 
-_TODO: one-paragraph summary of responsibility and boundaries._
+`ingestor/decoder/decoder.go` implements the **swap decoder** used by both ingest
+sources (Yellowstone Geyser and Helius LaserStream).
+
+It consumes upstream protobuf updates and produces canonical protobuf events:
+
+- `dex.sol.v1.SwapEvent` (Raydium, Orca Whirlpool, Meteora)
+- with best-effort timestamps derived from block metadata
+
+It also listens to account updates to cache pool metadata (fees, mints) required
+to decode swaps accurately.
 
 ## Why this file exists
 
-_TODO: architectural motivation and why this logic lives here (vs elsewhere)._ 
+The ingestion layer receives raw Solana transactions and accounts, but downstream
+systems (JetStream consumers, ClickHouse sinks, candle builders) want a stable,
+DEX-agnostic event model.
+
+This decoder exists to:
+
+- isolate “DEX-specific decoding” from ingestion transport details
+- provide a single place to support multiple DEX programs
+- attach consistent fields (chain ID, slot, signature, amounts, fees)
+- share state across streams (slot timestamps, pool config/fees) so decoded events are higher quality
 
 ## Full source
 
@@ -24,22 +42,31 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="package decoder" file=<rootDir>/ingestor/decoder/decoder.go#L1-L1 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Declares the `ingestor/decoder` package — the transport-agnostic swap decoding layer.
 
-**How:** _TODO_
+**How:** Ingest processors feed it:
 
-**Why:** _TODO_
+- block metadata (`HandleBlockMeta`) to populate slot→timestamp lookups
+- account updates (`HandleAccount`) to cache pool metadata
+- transaction updates (`DecodeTransaction`) to produce canonical swap events
+
+**Why:** Ingest transports (Geyser vs Helius) should not each implement their own DEX decoding rules.
 
 ### imports
 
 ```go title="imports" file=<rootDir>/ingestor/decoder/decoder.go#L3-L18 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Dependencies for decoding: standard parsing/time helpers, base58 encoding, DEX-specific decoders, and upstream protobuf types.
 
-**How:** _TODO_
+**How:** This file orchestrates decoding by:
 
-**Why:** _TODO_
+- reading account keys and balances from Yellowstone transaction updates (`pb`)
+- using DEX-specific packages (`decoder/raydium`, `decoder/orca_whirlpool`, `decoder/meteora`) to parse instruction payloads
+- emitting canonical protobuf events (`dexv1`)
+- consulting shared helpers (`ingestor/common`, `ingestor/internal/pools`) for timestamps and pool metadata
+
+**Why:** Keeping all the “glue” in one place makes it easier to add/remove supported programs without touching ingestion clients.
 
 ### const (chainIDSolana)
 
@@ -48,11 +75,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="const (chainIDSolana)" file=<rootDir>/ingestor/decoder/decoder.go#L20-L20 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Constant Solana chain identifier used in emitted protobuf events.
 
-**How:** _TODO_
+**How:** This value is written into `dexv1.SwapEvent.ChainId` for every decoded swap.
 
-**Why:** _TODO_
+**Why:** Downstream sinks and analytics tables support multi-chain schemas; tagging events with a chain ID keeps that door open even if today’s focus is Solana.
 
 ### type (Decoder)
 
@@ -61,11 +88,21 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="type (Decoder)" file=<rootDir>/ingestor/decoder/decoder.go#L22-L30 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** `Decoder` holds the shared state required to decode swaps across multiple programs and multiple ingest transports.
 
-**How:** _TODO_
+**How:** It maintains:
 
-**Why:** _TODO_
+- `slotCache`: best-known mapping from slot → timestamp (populated via block meta)
+- Raydium fee state:
+  - `poolConfig`: pool account → amm config account
+  - `configFees`: amm config account → fee bps
+  - `poolFees`: pool account → fee bps (derived from the above)
+- Orca pool metadata (`orcaPools`): pool account → decoded whirlpool info (mints, vaults, fee rate)
+
+**Why:** Swap decoding often needs context that is not present in a single transaction:
+
+- timestamps come from block metadata
+- fee rates and token mints come from on-chain pool/config accounts
 
 ### func New
 
@@ -74,11 +111,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func New" file=<rootDir>/ingestor/decoder/decoder.go#L32-L45 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Constructs a `Decoder` with an optional shared slot cache.
 
-**How:** _TODO_
+**How:** If `cache` is `nil`, it creates a new in-memory cache via `common.NewMemorySlotTimeCache()`. It also initializes all internal maps so the decoder can be fed account/tx updates immediately.
 
-**Why:** _TODO_
+**Why:** Callers that already maintain a slot cache (e.g. a processor that also handles block heads) can share it, reducing duplicated state and improving timestamp consistency.
 
 ### func (*Decoder) SlotCache
 
@@ -87,11 +124,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*Decoder) SlotCache" file=<rootDir>/ingestor/decoder/decoder.go#L47-L51 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Exposes the underlying `SlotTimeCache` used by the decoder.
 
-**How:** _TODO_
+**How:** Returns the cache interface directly (not a copy).
 
-**Why:** _TODO_
+**Why:** Enables higher-level components to share the same cache instance across multiple pipelines (e.g. separate processors for block heads and swaps).
 
 ### func (*Decoder) HandleBlockMeta
 
@@ -100,11 +137,13 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*Decoder) HandleBlockMeta" file=<rootDir>/ingestor/decoder/decoder.go#L53-L61 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Updates the slot→timestamp cache from upstream block metadata.
 
-**How:** _TODO_
+**How:** When a `SubscribeUpdateBlockMeta` includes a `block_time`, the decoder stores:
 
-**Why:** _TODO_
+- `slot` → `time.Unix(block_time.timestamp, 0).UTC()`
+
+**Why:** Many downstream events are keyed by slot and benefit from a stable timestamp. Populating this cache early lets swap decoding attach best-effort time even when the swap instruction itself carries none.
 
 ### func (*Decoder) HandleAccount
 
@@ -113,11 +152,21 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*Decoder) HandleAccount" file=<rootDir>/ingestor/decoder/decoder.go#L63-L82 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Indexes account updates that enrich swap decoding (fees, mints, pool metadata).
 
-**How:** _TODO_
+**How:** It inspects the account owner program and dispatches:
 
-**Why:** _TODO_
+- Raydium CLMM program (`ray.ProgramID`) → `handleRaydiumAccount(pubkey, data)` to discover pool config + fee rates
+- Orca Whirlpool program (`orcawhirlpool.WhirlpoolProgramID`) → `poolmeta.DecodeOrcaPool(data)` to extract mints/vaults/fee rate
+
+Account and owner pubkeys are base58-encoded for stable map keys.
+
+**Why:** For several DEXes, the transaction instruction alone is not enough to compute:
+
+- which mints are being swapped (token mints)
+- what the fee rate is
+
+Account caching makes swap events more complete and reduces “unknown pool” drops.
 
 ### func (*Decoder) DecodeTransaction
 
@@ -126,11 +175,26 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*Decoder) DecodeTransaction" file=<rootDir>/ingestor/decoder/decoder.go#L84-L163 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Decodes a transaction update into zero or more canonical `dexv1.SwapEvent` messages.
 
-**How:** _TODO_
+**How:** The function:
 
-**Why:** _TODO_
+1. Performs defensive nil checks on the nested Yellowstone transaction structure (transaction → meta → message).
+2. Builds helper views needed for decoding:
+   - `accountStrs`: base58 strings for account keys (used to resolve program IDs and account addresses)
+   - `vaults`: token balance snapshots grouped by owner via `extractVaultBalances(meta)`
+   - `signature`: first tx signature via `encodeSignature(...)`
+   - `timestamp`: best-effort slot timestamp via `lookupSlotTimestamp(d.slotCache, slot)`
+3. Iterates compiled instructions and identifies the program for each instruction via `ProgramIdIndex`.
+4. Dispatches to the correct decoder path:
+   - Raydium → `buildRaydiumSwap(...)`
+   - Orca Whirlpool → `buildOrcaSwap(...)`
+   - Meteora (detected via `meteora.ProgramKindForID`) → `buildMeteoraSwap(...)`
+5. Aggregates all non-nil swap events and returns them.
+
+If a recognised program fails to decode, the error is wrapped in `*DecodeError{Program: <id>, Err: ...}` so callers can attribute failures per program.
+
+**Why:** A single Solana transaction can contain multiple swap instructions (or swaps across different programs). Decoding at the instruction level and returning a slice makes the ingest pipeline robust and extensible.
 
 ### type (DecodeError)
 
@@ -139,11 +203,14 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="type (DecodeError)" file=<rootDir>/ingestor/decoder/decoder.go#L165-L169 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Error wrapper that annotates a decode failure with the Solana program ID.
 
-**How:** _TODO_
+**How:** `DecodeTransaction` returns `*DecodeError` when a known program path fails. The wrapper implements `Error()` and `Unwrap()` so callers can:
 
-**Why:** _TODO_
+- display a useful message (`"<program>: <err>"`)
+- use `errors.As` / `errors.Is` to classify failures
+
+**Why:** Attribution matters: a “decode failed” metric is much more actionable when it includes *which* program caused it (Raydium vs Orca vs a specific Meteora program ID).
 
 ### func (*DecodeError) Error
 
@@ -152,11 +219,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*DecodeError) Error" file=<rootDir>/ingestor/decoder/decoder.go#L171-L176 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Formats the decode error as a single string.
 
-**How:** _TODO_
+**How:** Returns an empty string when the receiver or underlying error is nil; otherwise formats as `"<program>: <err>"`.
 
-**Why:** _TODO_
+**Why:** Keeping the program ID in the error string makes logs/debug output immediately actionable.
 
 ### func (*DecodeError) Unwrap
 
@@ -165,11 +232,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*DecodeError) Unwrap" file=<rootDir>/ingestor/decoder/decoder.go#L178-L183 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Exposes the underlying error for Go error unwrapping.
 
-**How:** _TODO_
+**How:** Returns `e.Err` (or `nil` if the receiver is nil).
 
-**Why:** _TODO_
+**Why:** Allows callers to use `errors.Is` / `errors.As` with wrapped decode errors while still preserving program attribution.
 
 ### func (*Decoder) handleRaydiumAccount
 
@@ -178,11 +245,26 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*Decoder) handleRaydiumAccount" file=<rootDir>/ingestor/decoder/decoder.go#L187-L241 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Consumes Raydium program-owned account data and extracts pool→fee configuration.
 
-**How:** _TODO_
+**How:** Raydium CLMM uses separate on-chain accounts for:
 
-**Why:** _TODO_
+- the pool state (which references an `amm_config` account)
+- the `amm_config` account (which contains the trade fee rate)
+
+This handler tries to decode both shapes:
+
+- If the data looks like a pool state account (`HasPoolDiscriminator`), it extracts the `amm_config` pubkey and records `pool → config`.
+- If the data looks like an `amm_config` (`HasAmmConfigDiscriminator`), it extracts the trade fee rate and records `config → feeBps`.
+
+Whenever it learns a new `config → feeBps`, it backfills any pools already known to reference that config (updating `poolFees`).
+
+There are additional fallback heuristics for “unknown” layouts:
+
+- a size check (`len(data) > ApproxConfigAccountMax`) to bias toward decoding pool state
+- last-resort attempts to decode both pool and config formats when discriminators aren’t present
+
+**Why:** Swap instructions do not always carry fee rates, and account update layouts can vary across program versions or RPC providers. Opportunistically learning fees from account streams improves swap event quality and reduces downstream guesswork.
 
 ### func (*Decoder) buildRaydiumSwap
 
@@ -191,11 +273,24 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*Decoder) buildRaydiumSwap" file=<rootDir>/ingestor/decoder/decoder.go#L243-L284 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Attempts to decode a single Raydium swap instruction into a canonical `dexv1.SwapEvent`.
 
-**How:** _TODO_
+**How:**
 
-**Why:** _TODO_
+1. Ignores empty instruction data (not a swap).
+2. Resolves the pool and its two token vault balances via `resolvePool(...)`:
+   - `pool` is inferred from instruction accounts that match an owner in the token balance map
+   - `vaultA`/`vaultB` provide pre/post balances, mint IDs, and decimals
+3. Parses the Raydium instruction payload with `ray.ParseSwapInstruction`.
+4. Builds a `ray.SwapContext` containing:
+   - pool + mint IDs, pre/post token balances, decimals
+   - slot, signature, best-effort timestamp
+5. Converts the decoder-specific event (`ray.SwapEvent`) into the canonical protobuf:
+   - fee bps is read from `d.poolFees[pool]` (populated by `HandleAccount`)
+
+Returns `nil` when the instruction does not look like a swap or required context is missing.
+
+**Why:** Raydium swap decoding needs both instruction bytes and token balance deltas. This helper keeps the “Raydium-specific” logic isolated while still emitting the repo’s standard event type.
 
 ### func (*Decoder) buildOrcaSwap
 
@@ -204,11 +299,26 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*Decoder) buildOrcaSwap" file=<rootDir>/ingestor/decoder/decoder.go#L286-L352 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Builds a canonical swap event for Orca Whirlpool swaps using cached pool metadata and token balance deltas.
 
-**How:** _TODO_
+**How:** The function:
 
-**Why:** _TODO_
+1. Extracts the pool account from the compiled instruction accounts (using a fixed index convention).
+2. Looks up cached whirlpool metadata (`d.orcaPools[poolID]`) which provides:
+   - token mint A/B
+   - fee rate (in hundredths of a basis point)
+3. Looks up token balances for the pool owner and identifies the two vault balances by matching `mint` values.
+4. Computes deltas between post- and pre-balances for each vault.
+5. Constructs a `dexv1.SwapEvent` with:
+   - `FeeBps = poolInfo.FeeRate / 100`
+   - `Provisional = true` (finalization/undo is handled by the ingest processor later)
+6. Assigns amounts based on the sign of deltas:
+   - if token A decreases and token B increases → base out, quote in
+   - otherwise → base in / quote out from positive/negative deltas
+
+Returns `nil` when required metadata/balances are missing or no meaningful delta is observed.
+
+**Why:** Orca Whirlpool decoding in this pipeline is primarily delta-based: the instruction bytes alone are not sufficient to infer the exact swap amounts without accounting state. Caching pool metadata + using token balance snapshots yields reliable canonical events.
 
 ### func (*Decoder) buildMeteoraSwap
 
@@ -217,11 +327,25 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*Decoder) buildMeteoraSwap" file=<rootDir>/ingestor/decoder/decoder.go#L354-L413 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Decodes a Meteora swap instruction into a canonical `dexv1.SwapEvent`.
 
-**How:** _TODO_
+**How:** Meteora decoding uses a richer context than some other DEXes. The function:
 
-**Why:** _TODO_
+1. Builds a `meteora.InstructionContext` containing:
+   - slot + signature
+   - full account list + instruction account indices
+   - pre/post token balances and log messages from transaction meta
+   - the concrete Meteora program ID and derived pool kind
+2. Optionally attaches a wall-clock timestamp (when the slot cache has one).
+3. Calls `meteora.DecodeSwapEvent(instrData, ctx)`.
+4. Converts the decoded result into `dexv1.SwapEvent`:
+   - fills mints/decimals/fee bps from the decoded event
+   - chooses reserves (virtual first, then real) when present
+   - assigns amounts based on whether base decreased
+
+Returns `nil` when the instruction does not represent a swap for that Meteora kind.
+
+**Why:** Meteora has multiple pool variants and often requires logs + token balances to decode reliably. Centralizing this translation keeps the rest of ingestion code DEX-agnostic.
 
 ### func convertRaydiumSwap
 
@@ -230,11 +354,18 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func convertRaydiumSwap" file=<rootDir>/ingestor/decoder/decoder.go#L415-L442 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Converts a Raydium-specific swap event into the canonical protobuf representation.
 
-**How:** _TODO_
+**How:** Populates:
 
-**Why:** _TODO_
+- chain/slot/signature/index identifiers
+- program/pool/mint metadata
+- decimals and sqrt price fields (`SqrtPriceQ64Pre`/`SqrtPriceQ64Post`)
+- `FeeBps` from the fee lookup passed in
+
+Amounts are assigned based on `ev.IsBaseInput` to maintain a consistent “base/quote” interpretation.
+
+**Why:** Keeping the conversion in one helper ensures a single, consistent mapping from Raydium decoder output to the protobuf contract consumed by sinks.
 
 ### type (tokenBalance)
 
@@ -243,11 +374,16 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="type (tokenBalance)" file=<rootDir>/ingestor/decoder/decoder.go#L444-L451 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Internal struct representing a token account’s balance snapshot for a transaction.
 
-**How:** _TODO_
+**How:** It captures:
 
-**Why:** _TODO_
+- `accountIndex`: index into the transaction’s account list
+- `mint` and `owner` as base58 strings (from token balance metadata)
+- `pre` and `post` raw amounts (as `uint64`)
+- `decimals` for later normalization/interpretation
+
+**Why:** Token balance deltas are the primary signal used by several swap decoders. Normalizing pre/post balances into a single struct simplifies downstream resolution and delta computation.
 
 ### func extractVaultBalances
 
@@ -256,11 +392,23 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func extractVaultBalances" file=<rootDir>/ingestor/decoder/decoder.go#L453-L496 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Builds a lookup of token balance snapshots grouped by token-account owner.
 
-**How:** _TODO_
+**How:** The helper:
 
-**Why:** _TODO_
+1. Builds a map keyed by `account_index` from the **pre** token balances:
+   - parses raw integer amounts from `UiTokenAmount.amount`
+   - records mint/owner/decimals and the pre amount
+2. Applies the **post** token balances:
+   - creates missing entries when a token account only appears post-tx
+   - fills the post amount
+3. Groups the resulting entries by `owner` string, returning:
+
+`map[owner][]*tokenBalance`
+
+This grouping is what `resolvePool` uses to map “which pool owns these token accounts” → “which vault balances should we use”.
+
+**Why:** The upstream protobuf exposes balances primarily by account index. Grouping by owner (often the pool address/authority) makes it practical to infer pool participation and locate vaults for delta-based swap decoding.
 
 ### func resolvePool
 
@@ -269,11 +417,17 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func resolvePool" file=<rootDir>/ingestor/decoder/decoder.go#L498-L536 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Infers the pool account and selects two vault balance entries associated with that pool for a given instruction.
 
-**How:** _TODO_
+**How:**
 
-**Why:** _TODO_
+1. Scans instruction account indices and chooses the first account address that appears as a key in the `vaults` map (grouped by owner).
+2. Retrieves all token balances for that pool owner.
+3. Attempts to order vaults based on instruction account ordering by matching `tokenBalance.accountIndex` to the instruction indices.
+4. Falls back to the unordered pool vault list when ordering cannot be recovered.
+5. Returns `(pool, vaultA, vaultB)` when at least two vault entries are available.
+
+**Why:** Raydium decoding needs to know which two vaults represent the two swap legs and to preserve a stable “A/B” ordering when possible. This helper encapsulates that inference so decoders don’t each re-implement it.
 
 ### func parseAmount
 
@@ -282,11 +436,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func parseAmount" file=<rootDir>/ingestor/decoder/decoder.go#L538-L551 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Parses a Yellowstone `UiTokenAmount` into a raw `uint64` amount.
 
-**How:** _TODO_
+**How:** Validates the input is present and non-empty, then uses `strconv.ParseUint(..., 10, 64)`. Errors include the mint string to make debugging easier.
 
-**Why:** _TODO_
+**Why:** Token balances arrive as decimal strings in the upstream protobuf; swap decoding requires raw integers to compute accurate deltas.
 
 ### func encodeSignature
 
@@ -295,11 +449,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func encodeSignature" file=<rootDir>/ingestor/decoder/decoder.go#L553-L558 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Converts the transaction’s signature bytes into a base58 string.
 
-**How:** _TODO_
+**How:** Uses the first signature in the slice (Solana’s canonical transaction signature) and returns an empty string when signatures are missing.
 
-**Why:** _TODO_
+**Why:** The signature is a primary identifier for deduplication and storage keys across the pipeline.
 
 ### func lookupSlotTimestamp
 
@@ -308,9 +462,14 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func lookupSlotTimestamp" file=<rootDir>/ingestor/decoder/decoder.go#L560-L569 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Returns the best-known Unix timestamp (seconds) for a slot using the configured cache.
 
-**How:** _TODO_
+**How:** Calls `cache.Get(slot)` and returns 0 when:
 
-**Why:** _TODO_
+- the cache is nil
+- the slot is missing
+- the stored time is zero
 
+Otherwise returns `ts.Unix()`.
+
+**Why:** Swap decoding wants to attach timestamps when possible, but timestamps are not always available at decode time. Returning 0 keeps the rest of the pipeline tolerant of missing time.

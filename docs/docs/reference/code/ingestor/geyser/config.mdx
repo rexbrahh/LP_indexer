@@ -6,11 +6,25 @@ This page is an **annotated source reference**. Code blocks are imported from th
 
 ## What this file is
 
-_TODO: one-paragraph summary of responsibility and boundaries._
+`ingestor/geyser/config.go` defines the runtime configuration for the
+Yellowstone Geyser ingest client.
+
+It is responsible for:
+
+- reading connection/auth settings from environment variables
+- loading program filter IDs from a YAML file
+- validating the resulting config before a gRPC connection is attempted
 
 ## Why this file exists
 
-_TODO: architectural motivation and why this logic lives here (vs elsewhere)._ 
+The Geyser ingest path is only useful when it is scoped to the right set of
+programs (DEX program IDs) and uses correct credentials.
+
+Keeping config parsing + validation in one place:
+
+- prevents each command from inventing its own env var names
+- avoids hard-to-debug runtime failures (“connected but receiving nothing”)
+- makes operational changes reviewable (adding a new program filter is a config diff, not a code diff)
 
 ## Full source
 
@@ -24,22 +38,22 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="package geyser" file=<rootDir>/ingestor/geyser/config.go#L1-L1 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Declares the `geyser` ingestor package.
 
-**How:** _TODO_
+**How:** This package contains the Yellowstone client and service loop that subscribe to updates and feed them into the canonical decode/publish pipeline.
 
-**Why:** _TODO_
+**Why:** Keeping Geyser-specific code scoped to a single package makes it easy to swap ingest sources (or add a fallback) without touching downstream decoders/sinks.
 
 ### imports
 
 ```go title="imports" file=<rootDir>/ingestor/geyser/config.go#L3-L9 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Dependencies for config parsing and YAML program filter loading.
 
-**How:** _TODO_
+**How:** Env vars come from `os`, validation formatting uses `fmt`/`strings`, and the YAML program list is parsed with `gopkg.in/yaml.v3`.
 
-**Why:** _TODO_
+**Why:** Program filters are maintained as data (YAML) so ops/users can adjust the subscription set without recompiling.
 
 ### type (Config)
 
@@ -48,11 +62,17 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="type (Config)" file=<rootDir>/ingestor/geyser/config.go#L11-L21 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** `Config` is the in-memory representation of Geyser client settings.
 
-**How:** _TODO_
+**How:** It contains:
 
-**Why:** _TODO_
+- `Endpoint`: `host:port` of the gRPC endpoint
+- `APIKey`: authentication token used via the `x-token` header
+- `ProgramFilters`: friendly name → program ID mapping used to filter subscriptions
+
+The struct tags (`yaml:"..."`) allow reading the same fields from a YAML file when needed.
+
+**Why:** Connection settings and filter lists vary across environments; codifying them in a struct makes validation and logging consistent.
 
 ### func LoadConfig
 
@@ -61,11 +81,15 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func LoadConfig" file=<rootDir>/ingestor/geyser/config.go#L23-L41 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Loads a `Config` from environment variables and an optional `programs.yaml` file.
 
-**How:** _TODO_
+**How:** The function:
 
-**Why:** _TODO_
+1. Reads `GEYSER_ENDPOINT` and `GEYSER_API_KEY`.
+2. Initializes an empty `ProgramFilters` map.
+3. When a YAML path is provided, calls `loadProgramFilters` and replaces the map.
+
+**Why:** Most deployments want credentials from env vars, but program ID lists are easier to manage as a versioned file.
 
 ### func loadProgramFilters
 
@@ -74,11 +98,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func loadProgramFilters" file=<rootDir>/ingestor/geyser/config.go#L43-L59 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Reads program IDs from a YAML file on disk.
 
-**How:** _TODO_
+**How:** Reads the file bytes, unmarshals a `{ programs: { name: id } }` mapping, and returns the inner map.
 
-**Why:** _TODO_
+**Why:** Keeping the YAML schema small and stable makes it easy to edit and reason about in ops/runbooks.
 
 ### func (*Config) Validate
 
@@ -87,11 +111,17 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*Config) Validate" file=<rootDir>/ingestor/geyser/config.go#L61-L93 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Validates required config fields and returns a single aggregated error.
 
-**How:** _TODO_
+**How:** It checks:
 
-**Why:** _TODO_
+- endpoint and API key are present
+- at least one program filter exists
+- each program ID is non-empty and has a plausible base58 length (32–44 chars)
+
+All discovered problems are accumulated into a single multi-line error message.
+
+**Why:** Aggregated validation makes misconfigurations faster to fix: you see all missing/bad fields at once rather than fixing them one-by-one across restarts.
 
 ### func (*Config) String
 
@@ -100,9 +130,8 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*Config) String" file=<rootDir>/ingestor/geyser/config.go#L95-L112 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Returns a log-friendly string representation of the config.
 
-**How:** _TODO_
+**How:** Masks the API key (only first/last 4 chars) and formats the program filter list as `name=id` pairs.
 
-**Why:** _TODO_
-
+**Why:** Config logging is useful for debugging “what did this process think it was configured with?”, but secrets should not be printed in full.

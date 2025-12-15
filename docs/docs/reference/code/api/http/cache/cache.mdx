@@ -6,11 +6,24 @@ This page is an **annotated source reference**. Code blocks are imported from th
 
 ## What this file is
 
-_TODO: one-paragraph summary of responsibility and boundaries._
+`api/http/cache/cache.go` implements an optional **Redis-backed cache** for the HTTP API.
+
+Currently it caches candle responses keyed by:
+
+- pool ID
+- timeframe string
+
+Values are stored as JSON-encoded `[]types.Candle` with a configurable TTL.
 
 ## Why this file exists
 
-_TODO: architectural motivation and why this logic lives here (vs elsewhere)._ 
+Candles are a read-heavy endpoint and are often queried repeatedly with the same parameters.
+
+A cache layer:
+
+- reduces load on the underlying storage/query layer (e.g. ClickHouse)
+- improves latency for hot pools/timeframes
+- gives the API a clear “fast path” contract (cache hit) and a clear fallback contract (miss / disabled)
 
 ## Full source
 
@@ -24,22 +37,27 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="package cache" file=<rootDir>/api/http/cache/cache.go#L1-L1 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Declares the `cache` package for API-specific caching utilities.
 
-**How:** _TODO_
+**How:** The `api/http` server imports this package to build a `Cache` client and call `GetCandles` / `SetCandles` around handler logic.
 
-**Why:** _TODO_
+**Why:** Keeping caching isolated avoids mixing Redis concerns (key formats, TTLs, JSON encoding) into HTTP handlers.
 
 ### imports
 
 ```go title="imports" file=<rootDir>/api/http/cache/cache.go#L3-L15 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Dependencies for env parsing, JSON encoding, timeouts/TTLs, Redis client calls, and shared API types.
 
-**How:** _TODO_
+**How:**
 
-**Why:** _TODO_
+- `redis/v9` provides the Redis client.
+- `encoding/json` serializes/deserializes candle payloads.
+- `os`/`strconv`/`time` parse configuration and TTLs.
+- `api/http/types` provides the `Candle` type and sentinel errors.
+
+**Why:** The cache is intentionally small and explicit: it encodes a clear key/value contract and avoids pulling in broader persistence abstractions.
 
 ### var (ErrDisabled)
 
@@ -48,11 +66,14 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="var (ErrDisabled)" file=<rootDir>/api/http/cache/cache.go#L17-L18 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Sentinel error indicating caching is disabled.
 
-**How:** _TODO_
+**How:** `GetCandles`/`SetCandles` return `ErrDisabled` when:
 
-**Why:** _TODO_
+- the cache config is not enabled, or
+- the `Cache` has no underlying Redis client (`c == nil` or `c.client == nil`)
+
+**Why:** Treating “disabled cache” as a specific, checkable error lets handlers decide to fall back cleanly without logging it as an unexpected failure.
 
 ### type (Config)
 
@@ -61,11 +82,15 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="type (Config)" file=<rootDir>/api/http/cache/cache.go#L20-L27 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Redis client configuration for the API cache layer.
 
-**How:** _TODO_
+**How:** `LoadConfigFromEnv` populates:
 
-**Why:** _TODO_
+- `Enabled`: derived from whether `API_REDIS_ADDR` is set
+- connection details (`Addr`, `Password`, `DB`)
+- `TTL`: expiration applied to cached candle values
+
+**Why:** A typed config makes it easy to validate and inject caching behavior in different environments (local dev, staging, prod).
 
 ### func LoadConfigFromEnv
 
@@ -74,11 +99,18 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func LoadConfigFromEnv" file=<rootDir>/api/http/cache/cache.go#L29-L69 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Builds a `Config` from environment variables.
 
-**How:** _TODO_
+**How:** The function:
 
-**Why:** _TODO_
+- reads `API_REDIS_ADDR`; if missing, it returns `Enabled=false` with a default TTL
+- reads optional `API_REDIS_PASSWORD`
+- parses `API_REDIS_DB` (defaults to `0`)
+- parses `API_REDIS_TTL` via `time.ParseDuration` (defaults to `5m`)
+
+It returns parse errors with clear context (e.g. “invalid API_REDIS_DB”).
+
+**Why:** Env vars are the operational API for the API server; this keeps the configuration surface explicit and reduces “mystery defaults”.
 
 ### type (Cache)
 
@@ -87,11 +119,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="type (Cache)" file=<rootDir>/api/http/cache/cache.go#L71-L75 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Thin wrapper around a Redis client plus its configuration.
 
-**How:** _TODO_
+**How:** When disabled, `client` stays nil and methods return `ErrDisabled`. When enabled, `client` points at a `redis.Client`.
 
-**Why:** _TODO_
+**Why:** This keeps the handler interface simple (one object that can be nil/disabled) while still encapsulating key formatting and serialization.
 
 ### func New
 
@@ -100,11 +132,14 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func New" file=<rootDir>/api/http/cache/cache.go#L77-L95 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Constructs a `Cache` instance from configuration.
 
-**How:** _TODO_
+**How:**
 
-**Why:** _TODO_
+- If `cfg.Enabled` is false, it returns a `Cache` without creating a Redis client.
+- If enabled, it builds `redis.Options` and creates a `redis.Client` via `redis.NewClient`.
+
+**Why:** Making “disabled cache” a first-class state keeps the rest of the API server code straightforward (it can always construct a cache object).
 
 ### func (*Cache) key
 
@@ -113,11 +148,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*Cache) key" file=<rootDir>/api/http/cache/cache.go#L97-L99 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Derives the Redis key for a pool/timeframe candle entry.
 
-**How:** _TODO_
+**How:** It formats keys as `pool:{poolID}:candles:{timeframe}`.
 
-**Why:** _TODO_
+**Why:** A single canonical key format prevents accidental key collisions and makes it easy to inspect cache contents via `redis-cli`.
 
 ### func (*Cache) GetCandles
 
@@ -126,11 +161,16 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*Cache) GetCandles" file=<rootDir>/api/http/cache/cache.go#L101-L121 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Fetches cached candles for `(poolID, timeframe)`.
 
-**How:** _TODO_
+**How:**
 
-**Why:** _TODO_
+- Returns `ErrDisabled` when caching is not configured.
+- Calls `GET` for the derived key.
+- Maps `redis.Nil` (key missing) to `types.ErrNotFound`.
+- Unmarshals the JSON payload into `[]types.Candle`.
+
+**Why:** The handler can treat “not found” and “cache disabled” as a normal miss while treating other Redis errors as infrastructure failures.
 
 ### func (*Cache) SetCandles
 
@@ -139,9 +179,12 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*Cache) SetCandles" file=<rootDir>/api/http/cache/cache.go#L123-L135 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Stores candles for `(poolID, timeframe)` with the configured TTL.
 
-**How:** _TODO_
+**How:**
 
-**Why:** _TODO_
+- Returns `ErrDisabled` when caching is not configured.
+- Marshals the candle slice to JSON.
+- Writes the value using `SET key value TTL`.
 
+**Why:** Writing via a single helper ensures serialization and TTL behavior are consistent for all endpoints that cache candle data.

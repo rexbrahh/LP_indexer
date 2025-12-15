@@ -6,11 +6,25 @@ This page is an **annotated source reference**. Code blocks are imported from th
 
 ## What this file is
 
-_TODO: one-paragraph summary of responsibility and boundaries._
+`backfill/orchestrator/orchestrator.go` implements a small **scheduler** that splits a slot span into batches and runs a user-supplied `RangeProcessor` over those batches with bounded concurrency.
+
+This file does not know anything about:
+
+- how to fetch historical data (Substreams, RPC, etc.)
+- how to persist results (ClickHouse, Parquet, etc.)
+
+It only coordinates “run `processor(ctx, Range)` for each Range”.
 
 ## Why this file exists
 
-_TODO: architectural motivation and why this logic lives here (vs elsewhere)._ 
+Backfills are long-running and operationally sensitive: you want predictable batching, bounded concurrency, and clean cancellation when something fails.
+
+By isolating scheduling mechanics here, backfill implementations can focus on:
+
+- correctness of the processing logic for a `Range`
+- idempotency and error handling per range
+
+while reusing the same concurrency/backpressure patterns across different backfill jobs.
 
 ## Full source
 
@@ -24,22 +38,29 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="package orchestrator" file=<rootDir>/backfill/orchestrator/orchestrator.go#L1-L1 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Declares the `orchestrator` package that coordinates backfill execution.
 
-**How:** _TODO_
+**How:** The package exposes:
 
-**Why:** _TODO_
+- domain types like `Range`
+- the `Orchestrator` struct with `Run(ctx)` to execute work
+
+**Why:** Separating scheduling from business logic keeps backfill code modular and easier to reason about.
 
 ### imports
 
 ```go title="imports" file=<rootDir>/backfill/orchestrator/orchestrator.go#L3-L10 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Concurrency + context coordination helpers and a small numeric utility.
 
-**How:** _TODO_
+**How:**
 
-**Why:** _TODO_
+- `errgroup` runs producer + worker goroutines and cancels the group on first error.
+- `math` provides `MaxUint64` for overflow-safe arithmetic in `addWithOverflow`.
+- stdlib errors/formatting packages keep returned errors actionable.
+
+**Why:** Backfills need robust cancellation and correct range math; these imports are the minimal set to achieve that.
 
 ### type (Range)
 
@@ -48,11 +69,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="type (Range)" file=<rootDir>/backfill/orchestrator/orchestrator.go#L12-L16 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Represents a half-open slot interval `[StartSlot, EndSlot)` to process.
 
-**How:** _TODO_
+**How:** The orchestrator produces `Range` values by chunking the configured slot span into batches of size `BatchSize`.
 
-**Why:** _TODO_
+**Why:** Using half-open intervals avoids off-by-one ambiguity and composes cleanly when chaining batches: the next batch starts at the previous batch’s `EndSlot`.
 
 ### func (Range) valid
 
@@ -61,11 +82,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (Range) valid" file=<rootDir>/backfill/orchestrator/orchestrator.go#L18-L21 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Checks whether a range contains at least one slot.
 
-**How:** _TODO_
+**How:** A range is valid when `EndSlot > StartSlot`.
 
-**Why:** _TODO_
+**Why:** Validity checks protect against misconfiguration and arithmetic edge cases (e.g. overflow) that could otherwise create empty work units or infinite loops.
 
 ### type (RangeProcessor)
 
@@ -74,11 +95,17 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="type (RangeProcessor)" file=<rootDir>/backfill/orchestrator/orchestrator.go#L23-L24 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Function type for “do the backfill work for this range”.
 
-**How:** _TODO_
+**How:** Callers implement a `RangeProcessor` that:
 
-**Why:** _TODO_
+- reads historical data for the slot window
+- decodes/aggregates as needed
+- writes to sinks
+
+and return an error if processing should fail the backfill run.
+
+**Why:** Passing behavior as a function keeps the orchestrator generic and reusable across different backfill strategies and data sources.
 
 ### type (Orchestrator)
 
@@ -87,11 +114,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="type (Orchestrator)" file=<rootDir>/backfill/orchestrator/orchestrator.go#L26-L30 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Holds the validated config and the processor callback to execute for each range.
 
-**How:** _TODO_
+**How:** `Run` uses `cfg` to generate work and calls `processor(ctx, Range)` in worker goroutines.
 
-**Why:** _TODO_
+**Why:** Binding config + behavior in a single object makes the scheduling API simple (`New(...).Run(ctx)`) and keeps internal state encapsulated.
 
 ### func New
 
@@ -100,11 +127,15 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func New" file=<rootDir>/backfill/orchestrator/orchestrator.go#L32-L41 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Constructs an `Orchestrator` after validating inputs.
 
-**How:** _TODO_
+**How:** It:
 
-**Why:** _TODO_
+- validates `cfg` via `cfg.Validate()`
+- rejects a nil `processor` (would panic later)
+- returns a ready-to-run `Orchestrator`
+
+**Why:** Input validation at construction time ensures `Run` can assume invariants (positive concurrency, non-nil processor) and remain straightforward.
 
 ### func (*Orchestrator) Run
 
@@ -113,11 +144,24 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*Orchestrator) Run" file=<rootDir>/backfill/orchestrator/orchestrator.go#L43-L117 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Executes the full backfill schedule: produce ranges, process them concurrently, and stop on error or cancellation.
 
-**How:** _TODO_
+**How:** `Run` uses an `errgroup` with two roles:
 
-**Why:** _TODO_
+- **Producer** goroutine:
+  - starts from `StartSlot`
+  - repeatedly computes `batchEnd = start + BatchSize` (overflow-safe)
+  - clamps to `EndSlot` when `EndSlot != 0`
+  - sends each valid `Range` to `workCh`
+  - closes `workCh` when done
+- **Workers** (`Concurrency` goroutines):
+  - range over `workCh`
+  - call `processor(ctx, rng)`
+  - on error, return an error annotated with the range bounds (which cancels the group)
+
+The use of `errgroup.WithContext` ensures that once any worker fails, the context is canceled and the producer/workers will exit promptly.
+
+**Why:** This pattern provides bounded parallelism and “fail fast” semantics—critical for large backfills where continuing after an error could waste hours and produce partial, inconsistent state.
 
 ### func (*Orchestrator) Config
 
@@ -126,11 +170,11 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func (*Orchestrator) Config" file=<rootDir>/backfill/orchestrator/orchestrator.go#L119-L122 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Returns the orchestrator’s configuration.
 
-**How:** _TODO_
+**How:** Returns `o.cfg` by value.
 
-**Why:** _TODO_
+**Why:** Exposing effective config is helpful for logging and tests without re-parsing environment variables.
 
 ### func addWithOverflow
 
@@ -139,9 +183,12 @@ _TODO: architectural motivation and why this logic lives here (vs elsewhere)._
 ```go title="func addWithOverflow" file=<rootDir>/backfill/orchestrator/orchestrator.go#L124-L132 showLineNumbers
 ```
 
-**What:** _TODO_
+**What:** Adds two `uint64` values and reports whether the addition overflowed.
 
-**How:** _TODO_
+**How:**
 
-**Why:** _TODO_
+- If `delta == 0`, it returns `start` (no overflow).
+- If `math.MaxUint64-start < delta`, the sum would wrap; it returns `(math.MaxUint64, true)`.
+- Otherwise it returns `(start + delta, false)`.
 
+**Why:** Backfill scheduling uses `uint64` slots; overflow-aware addition prevents wrap-around bugs that could otherwise produce invalid ranges or infinite scheduling loops.
