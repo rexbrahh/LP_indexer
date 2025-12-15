@@ -1,0 +1,46 @@
+---
+title: "scripts/check_candle_parity.sh"
+---
+
+This page is an **annotated source reference**. Code blocks are imported from the repository at build time.
+
+## What this file is
+
+`scripts/check_candle_parity.sh` is a small parity check that compares a hard-coded expected candle CSV against the current contents of a ClickHouse candles table.
+
+## Why this file exists
+
+Candles are derived state; simple “golden output” checks are useful to quickly validate:
+
+- ingestion/aggregation produced the intended rows
+- schema and rounding align with expectations
+
+## Full source
+
+```bash title="scripts/check_candle_parity.sh" file=<rootDir>/scripts/check_candle_parity.sh showLineNumbers
+```
+
+## Walkthrough (by block)
+
+### Strict mode + expected output
+
+```bash title="Strict mode + expected output" file=<rootDir>/scripts/check_candle_parity.sh#L1-L6 showLineNumbers
+```
+
+**What:** Defines a hard-coded expected CSV output string for a small candle sample.
+
+**How:** The expectation encodes timestamps, a pool identifier, OHLC values, and volume.
+
+**Why:** A “known good” fixture makes it easy to detect regressions without a full test harness.
+
+### Query ClickHouse and compare
+
+```bash title="Query ClickHouse and compare" file=<rootDir>/scripts/check_candle_parity.sh#L7-L16 showLineNumbers
+```
+
+**What:** Queries ClickHouse, formats output as CSV, and compares it to the expected string.
+
+**How:** Uses `clickhouse-client --query ... FORMAT CSV` and a string comparison.
+
+**Why:** This provides a quick binary signal (“parity passed/failed”) that can be used in local debugging or CI smoke tests.
+

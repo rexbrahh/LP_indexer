@@ -1,0 +1,53 @@
+---
+title: "buf.gen.yaml"
+---
+
+This page is an **annotated source reference**. Code blocks are imported from the repository at build time.
+
+## What this file is
+
+`buf.gen.yaml` configures Buf code generation for this repository.
+
+It declares which language plugins to run and where to place generated output.
+
+## Why this file exists
+
+The repo uses Protobuf as a shared schema between components. Having a consistent generator config ensures:
+
+- generated bindings land in predictable locations (`gen/go`, `gen/cpp`)
+- regeneration is deterministic across developers and CI
+- schema changes are easy to review (regenerate, commit diffs)
+
+## Full source
+
+```yaml title="buf.gen.yaml" file=<rootDir>/buf.gen.yaml showLineNumbers
+```
+
+## Walkthrough (by section)
+
+### version
+
+```yaml title="version" file=<rootDir>/buf.gen.yaml#L1-L1 showLineNumbers
+```
+
+**What:** Selects the Buf config schema version.
+
+**How:** `v1` uses the current generation config format.
+
+**Why:** Versioned configs let Buf evolve without breaking older repos.
+
+### plugins: Go, Go gRPC, and C++
+
+```yaml title="plugins" file=<rootDir>/buf.gen.yaml#L3-L13 showLineNumbers
+```
+
+**What:** Declares the generator plugins and outputs.
+
+**How:**
+
+- The `go` and `go-grpc` plugins write to `gen/go`.
+- `paths=source_relative` keeps generated file paths stable and mirrors the source `.proto` layout.
+- The `cpp` plugin writes to `gen/cpp`.
+
+**Why:** Both Go services and the C++ candle engine rely on the same schema; generating both languages keeps cross-language boundaries aligned.
+

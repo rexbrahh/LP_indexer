@@ -1,0 +1,32 @@
+---
+title: "ops/clickhouse/ohlcv_5m.sql"
+---
+
+This page is an **annotated source reference**. Code blocks are imported from the repository at build time.
+
+## What this file is
+
+`ops/clickhouse/ohlcv_5m.sql` defines the `ohlcv_5m` table used to persist 5-minute candles.
+
+## Why this file exists
+
+5-minute candles provide a higher-level rollup for charting and reduce query cardinality relative to 1-minute data.
+
+## Full source
+
+```sql title="ops/clickhouse/ohlcv_5m.sql" file=<rootDir>/ops/clickhouse/ohlcv_5m.sql showLineNumbers
+```
+
+## Walkthrough (by statement)
+
+### CREATE TABLE ohlcv_5m
+
+```sql title="CREATE TABLE ohlcv_5m" file=<rootDir>/ops/clickhouse/ohlcv_5m.sql#L1-L19 showLineNumbers
+```
+
+**What:** Creates a ReplacingMergeTree table for 5-minute candles.
+
+**How:** Uses the same column set as other `ohlcv_*` tables, keyed by `(chain_id, pair_id, pool_id, window_start)`.
+
+**Why:** Separate timeframe tables keep writes and reads straightforward and avoid mixing granularities in one dataset.
+

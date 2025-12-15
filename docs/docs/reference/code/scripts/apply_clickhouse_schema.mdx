@@ -1,0 +1,123 @@
+---
+title: "scripts/apply_clickhouse_schema.sh"
+---
+
+This page is an **annotated source reference**. Code blocks are imported from the repository at build time.
+
+## What this file is
+
+`scripts/apply_clickhouse_schema.sh` applies all ClickHouse schema files under `ops/clickhouse/` to a target ClickHouse instance.
+
+It supports two execution modes:
+
+- direct `clickhouse-client` invocation (preferred)
+- fallback to `docker exec` into a running ClickHouse container (when the client is not installed locally)
+
+## Why this file exists
+
+ClickHouse schemas are operational infrastructure. Applying them reliably and repeatably is required before running sinks and end-to-end tests.
+
+This script provides:
+
+- a single “do the right thing” entrypoint for local dev and CI
+- DSN parsing so operators can configure hosts/ports/users via one env var
+- deterministic application order (sorted SQL files)
+
+## Full source
+
+```bash title="scripts/apply_clickhouse_schema.sh" file=<rootDir>/scripts/apply_clickhouse_schema.sh showLineNumbers
+```
+
+## Walkthrough (by block)
+
+### Strict mode + repo paths
+
+```bash title="Strict mode + repo paths" file=<rootDir>/scripts/apply_clickhouse_schema.sh#L1-L6 showLineNumbers
+```
+
+**What:** Enables strict bash behavior and computes `ROOT_DIR` / schema directory paths.
+
+**How:** `ROOT_DIR` is derived from the script location; `SCHEMA_DIR` points to `ops/clickhouse`.
+
+**Why:** Using repo-relative paths avoids “must run from repo root” assumptions and makes the script robust when invoked from anywhere.
+
+### Validate schema directory exists
+
+```bash title="Validate schema directory exists" file=<rootDir>/scripts/apply_clickhouse_schema.sh#L7-L10 showLineNumbers
+```
+
+**What:** Fails fast if the schema directory is missing.
+
+**How:** Checks `-d "$SCHEMA_DIR"` and prints a clear error to stderr on failure.
+
+**Why:** Applying schemas is only meaningful when the SQL files exist; fast failure avoids confusing “file not found” errors later.
+
+### Resolve ClickHouse client command (binary vs docker exec)
+
+```bash title="Resolve ClickHouse client command (binary vs docker exec)" file=<rootDir>/scripts/apply_clickhouse_schema.sh#L12-L28 showLineNumbers
+```
+
+**What:** Chooses how to run `clickhouse-client`.
+
+**How:**
+
+- Uses `$CLICKHOUSE_CLIENT` if set, otherwise `clickhouse-client`.
+- If the binary isn’t found, attempts to find a running Docker container with “clickhouse” in its name and uses `docker exec -i`.
+- Errors out if neither local binary nor Docker fallback is available.
+
+**Why:** This supports both “installed ClickHouse tools” and “ClickHouse via `make up`/Docker” workflows.
+
+### DSN default + parsing into clickhouse-client flags
+
+```bash title="DSN default + parsing into clickhouse-client flags" file=<rootDir>/scripts/apply_clickhouse_schema.sh#L30-L66 showLineNumbers
+```
+
+**What:** Translates a ClickHouse DSN into `clickhouse-client` CLI flags.
+
+**How:**
+
+- Uses `CLICKHOUSE_DSN` if set; otherwise defaults to localhost.
+- Runs a small inline Python script to parse the DSN and print flags such as `--host`, `--port`, `--user`, `--password`, and `--database`.
+- Rejects unsupported schemes early.
+
+**Why:** A DSN is a convenient single-string configuration format for CI and ops; converting it to flags keeps the script compatible with the ClickHouse CLI.
+
+### Validate DSN parsing and build command arrays
+
+```bash title="Validate DSN parsing and build command arrays" file=<rootDir>/scripts/apply_clickhouse_schema.sh#L68-L73 showLineNumbers
+```
+
+**What:** Checks for parsing errors and splits the resolved client command into an argv array.
+
+**How:**
+
+- If parsing produced an “ERROR:” sentinel, print and exit.
+- Splits `CLICKHOUSE_CLIENT_CMD` into `CLIENT_ARR` so it can be invoked safely with additional args.
+
+**Why:** Array execution avoids word-splitting bugs and makes it easier to support both “clickhouse-client” and “docker exec … clickhouse-client” forms.
+
+### Discover schema files
+
+```bash title="Discover schema files" file=<rootDir>/scripts/apply_clickhouse_schema.sh#L75-L83 showLineNumbers
+```
+
+**What:** Collects all `.sql` files under `ops/clickhouse/` in sorted order.
+
+**How:** Uses `find … -print0 | sort -z` and reads into `SCHEMA_FILES`.
+
+**Why:** Deterministic ordering makes schema application reproducible and avoids flaky behavior from filesystem ordering differences.
+
+### Apply schemas
+
+```bash title="Apply schemas" file=<rootDir>/scripts/apply_clickhouse_schema.sh#L85-L90 showLineNumbers
+```
+
+**What:** Applies each schema file with `clickhouse-client`.
+
+**How:** For each file, runs:
+
+- `--multiquery` to allow multiple statements
+- `--queries-file "$file"` to feed the SQL file directly
+
+**Why:** This is the operational “apply migrations” step needed before sinks and E2E tests can run.
+

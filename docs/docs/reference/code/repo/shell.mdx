@@ -1,0 +1,32 @@
+---
+title: "shell.nix"
+---
+
+This page is an **annotated source reference**. Code blocks are imported from the repository at build time.
+
+## What this file is
+
+`shell.nix` is a compatibility shim that exposes the flake dev shell to non-flake Nix workflows.
+
+## Why this file exists
+
+Some environments and tools still expect a `shell.nix` entrypoint. This file forwards to the flake-based dev shell so both styles work while keeping `flake.nix` as the single source of truth.
+
+## Full source
+
+```nix title="shell.nix" file=<rootDir>/shell.nix showLineNumbers
+```
+
+## Walkthrough (by expression)
+
+### flake passthrough
+
+```nix title="flake passthrough" file=<rootDir>/shell.nix#L1-L5 showLineNumbers
+```
+
+**What:** Loads the flake for the current directory and returns the default dev shell for the current system.
+
+**How:** Uses `builtins.getFlake` and indexes `flake.devShells.${builtins.currentSystem}.default`.
+
+**Why:** Keeps a single source of truth for toolchain definition (`flake.nix`) while supporting older `nix-shell` entrypoints.
+

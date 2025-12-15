@@ -1,0 +1,36 @@
+---
+title: "ops/programs.yaml"
+---
+
+This page is an **annotated source reference**. Code blocks are imported from the repository at build time.
+
+## What this file is
+
+`ops/programs.yaml` is a curated list of Solana program IDs used for DEX filtering.
+
+## Why this file exists
+
+Ingestion pipelines often need an explicit allowlist of program IDs to:
+
+- reduce bandwidth/compute by filtering irrelevant transactions
+- make supported DEX coverage explicit and auditable
+- keep IDs in version control (reviewable changes)
+
+## Full source
+
+```yaml title="ops/programs.yaml" file=<rootDir>/ops/programs.yaml showLineNumbers
+```
+
+## Walkthrough (by section)
+
+### programs map
+
+```yaml title="programs map" file=<rootDir>/ops/programs.yaml#L1-L21 showLineNumbers
+```
+
+**What:** A mapping from a human-friendly label to a Solana program ID (base58 string).
+
+**How:** Each entry under `programs:` represents one on-chain program the ingestor/decoder cares about (Raydium, Orca, Meteora, …).
+
+**Why:** Separating “which programs do we care about?” from code makes it easier to update program IDs (or add new ones) without refactoring ingestion logic.
+

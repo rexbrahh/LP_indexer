@@ -1,0 +1,58 @@
+---
+title: "observability/metrics.go"
+---
+
+This page is an **annotated source reference**. Code blocks are imported from the repository at build time.
+
+## What this file is
+
+`observability/metrics.go` defines the **canonical metric name constants** used across the repo.
+
+It is intentionally “dumb”:
+
+- no Prometheus registration
+- no runtime configuration
+- just stable string identifiers
+
+## Why this file exists
+
+Metric names are part of the operational API of the system (dashboards, alerts, SLOs).
+
+Centralizing them avoids:
+
+- drift (“bridge_forward_total” vs “bridge_forwarded_total”)
+- accidental renames during refactors
+- hard-to-debug mismatches between code and dashboards
+
+## Full source
+
+```go title="observability/metrics.go" file=<rootDir>/observability/metrics.go showLineNumbers
+```
+
+## Walkthrough (by declaration)
+
+### package observability
+
+```go title="package observability" file=<rootDir>/observability/metrics.go#L1-L1 showLineNumbers
+```
+
+**What:** Declares the `observability` package for metrics/constants shared across services.
+
+**How:** Other packages import `github.com/rexbrahh/lp-indexer/observability` and reference constants when registering Prometheus metrics.
+
+**Why:** Keeping shared observability primitives in a single package reduces duplication and makes it easy to audit “what metrics exist” in one place.
+
+### const (MetricBridgeDroppedTotal, MetricBridgeForwardTotal, MetricBridgePublishErrors, MetricBridgeSourceLagSecond, MetricIngestorSlotLag, MetricMeteoraDecodeErrors, MetricMeteoraSwapsTotal, MetricOrcaDecodeErrors, MetricOrcaSwapsTotal, MetricPublisherNATSErrors, MetricPublisherNATSacksTotal, MetricRaydiumDecodeErrors, MetricRaydiumSwapsTotal)
+
+**Symbols:** MetricBridgeDroppedTotal, MetricBridgeForwardTotal, MetricBridgePublishErrors, MetricBridgeSourceLagSecond, MetricIngestorSlotLag, MetricMeteoraDecodeErrors, MetricMeteoraSwapsTotal, MetricOrcaDecodeErrors, MetricOrcaSwapsTotal, MetricPublisherNATSErrors, MetricPublisherNATSacksTotal, MetricRaydiumDecodeErrors, MetricRaydiumSwapsTotal
+
+```go title="const (MetricBridgeDroppedTotal, MetricBridgeForwardTotal, MetricBridgePublishErrors, MetricBridgeSourceLagSecond, MetricIngestorSlotLag, MetricMeteoraDecodeErrors, MetricMeteoraSwapsTotal, MetricOrcaDecodeErrors, MetricOrcaSwapsTotal, MetricPublisherNATSErrors, MetricPublisherNATSacksTotal, MetricRaydiumDecodeErrors, MetricRaydiumSwapsTotal)" file=<rootDir>/observability/metrics.go#L3-L19 showLineNumbers
+```
+
+**What:** A curated set of metric name strings for the ingestor, publisher, and bridge components.
+
+**How:** Callers use these constants when constructing Prometheus metrics (e.g. `promauto.NewCounterVec(...)`) so names stay consistent even if code moves between packages.
+
+The constant values are the “suffix” portion of metric names; most code also sets a `Namespace`/`Subsystem` when registering.
+
+**Why:** Metric names should be stable across releases because they are wired into dashboards and alert rules; constants make the desired stability explicit in code.

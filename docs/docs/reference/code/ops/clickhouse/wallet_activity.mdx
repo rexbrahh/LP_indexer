@@ -1,0 +1,35 @@
+---
+title: "ops/clickhouse/wallet_activity.sql"
+---
+
+This page is an **annotated source reference**. Code blocks are imported from the repository at build time.
+
+## What this file is
+
+`ops/clickhouse/wallet_activity.sql` defines a table for persisted wallet heuristic/activity signals.
+
+## Why this file exists
+
+Wallet heuristics are derived analytics consumed by dashboards and alerts. Persisting them allows:
+
+- fast lookup by wallet
+- periodic recomputation with “latest row wins” semantics
+
+## Full source
+
+```sql title="ops/clickhouse/wallet_activity.sql" file=<rootDir>/ops/clickhouse/wallet_activity.sql showLineNumbers
+```
+
+## Walkthrough (by statement)
+
+### CREATE TABLE wallet_activity
+
+```sql title="CREATE TABLE wallet_activity" file=<rootDir>/ops/clickhouse/wallet_activity.sql#L1-L11 showLineNumbers
+```
+
+**What:** Creates a ReplacingMergeTree table keyed by `(chain_id, wallet)`.
+
+**How:** Stores swap counts over windows and boolean flags, with `updated_at` controlling replacement.
+
+**Why:** This schema makes it easy to “upsert” the latest view of a wallet without maintaining a full history unless needed.
+

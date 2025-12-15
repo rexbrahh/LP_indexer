@@ -1,0 +1,67 @@
+---
+title: "ops/clickhouse/all.sql"
+---
+
+This page is an **annotated source reference**. Code blocks are imported from the repository at build time.
+
+## What this file is
+
+`ops/clickhouse/all.sql` is a monolithic ClickHouse schema file that contains all `CREATE TABLE` statements for the project.
+
+## Why this file exists
+
+Some scripts and bootstrapping workflows prefer applying one file rather than coordinating multiple files.
+
+This file provides a single “apply everything” schema entrypoint, while the individual `*.sql` files remain useful for focused diffs and targeted deployments.
+
+## Full source
+
+```sql title="ops/clickhouse/all.sql" file=<rootDir>/ops/clickhouse/all.sql showLineNumbers
+```
+
+## Walkthrough (by statement)
+
+### Schema header + trades table
+
+```sql title="Schema header + trades table" file=<rootDir>/ops/clickhouse/all.sql#L1-L26 showLineNumbers
+```
+
+**What:** Declares the schema header comment and creates the `trades` table.
+
+**How:** This definition mirrors `ops/clickhouse/trades.sql` and uses MergeTree with date partitioning.
+
+**Why:** Trades are the foundational persisted dataset for analytics and backfills; they appear first in the monolithic schema.
+
+### pool_snapshots table
+
+```sql title="pool_snapshots table" file=<rootDir>/ops/clickhouse/all.sql#L28-L43 showLineNumbers
+```
+
+**What:** Creates the `pool_snapshots` table.
+
+**How:** Mirrors `ops/clickhouse/pool_snapshots.sql`.
+
+**Why:** Snapshots complement trades with point-in-time pool state.
+
+### ohlcv_* candle tables
+
+```sql title="ohlcv_* candle tables" file=<rootDir>/ops/clickhouse/all.sql#L45-L126 showLineNumbers
+```
+
+**What:** Creates multiple timeframe candle tables (`ohlcv_1s`, `ohlcv_1m`, `ohlcv_5m`, `ohlcv_1h`, `ohlcv_1d`).
+
+**How:** Each table uses ReplacingMergeTree keyed by `(chain_id, pair_id, pool_id, window_start)` with an `updated_at` replacement timestamp.
+
+**Why:** Separating timeframes into distinct tables simplifies ingestion and keeps query logic explicit.
+
+### wallet_activity + holders_estimate tables
+
+```sql title="wallet_activity + holders_estimate tables" file=<rootDir>/ops/clickhouse/all.sql#L128-L165 showLineNumbers
+```
+
+**What:** Creates derived analytics tables for wallet heuristics and holder estimates.
+
+**How:** Both use ReplacingMergeTree so periodic recomputation can “overwrite” prior rows by key.
+
+**Why:** These tables support dashboards and higher-level analytics beyond raw swaps and candles.
+

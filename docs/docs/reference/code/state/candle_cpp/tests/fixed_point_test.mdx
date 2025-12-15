@@ -1,0 +1,153 @@
+---
+title: "tests/fixed_point_test.cpp"
+---
+
+This page is an **annotated source reference**. Code blocks are imported from the repository at build time.
+
+## What this file is
+
+`fixed_point_test.cpp` is a GoogleTest suite for the candle engine’s fixed-point arithmetic utilities (`FixedPoint`, `fp_multiply`, `fp_divide`, and internal 128-bit helpers).
+
+## Why this file exists
+
+The candle engine uses fixed-point arithmetic to remain deterministic and avoid floating-point drift across platforms.
+
+If fixed-point math is wrong, everything downstream becomes wrong:
+
+- price and volume aggregation is incorrect
+- high/low/open/close tracking becomes unstable
+- overflow behavior can silently corrupt data
+
+## Full source
+
+```cpp title="state/candle_cpp/tests/fixed_point_test.cpp" file=<rootDir>/state/candle_cpp/tests/fixed_point_test.cpp showLineNumbers
+```
+
+## Walkthrough (by test group)
+
+### Includes + namespace
+
+```cpp title="Includes + namespace" file=<rootDir>/state/candle_cpp/tests/fixed_point_test.cpp#L1-L4 showLineNumbers
+```
+
+**What:** Pulls in GoogleTest and the fixed-point header.
+
+**How:** Uses `using namespace candle;` so tests can refer to `FixedPoint` and helpers unqualified.
+
+**Why:** Keeps tests readable; they serve as executable documentation for the math API.
+
+### Basic construction and conversion
+
+```cpp title="Basic construction and conversion" file=<rootDir>/state/candle_cpp/tests/fixed_point_test.cpp#L10-L41 showLineNumbers
+```
+
+**What:** Verifies the basic representation and conversion functions.
+
+**How:** Tests:
+
+- default constructor produces `0`
+- `from_int` round-trips via `to_int` and `to_double`
+- `from_double` round-trips approximately via `to_double`
+- `raw()` matches expected scaling (`FIXED_ONE`)
+
+**Why:** These are the “axioms” that higher-level arithmetic depends on.
+
+### Arithmetic: add/sub/unary minus and compound ops
+
+```cpp title="Arithmetic: add/sub/unary minus and compound ops" file=<rootDir>/state/candle_cpp/tests/fixed_point_test.cpp#L47-L102 showLineNumbers
+```
+
+**What:** Validates operator overloads for addition and subtraction.
+
+**How:** Covers:
+
+- integer and fractional addition/subtraction
+- unary minus sign flip
+- `+=` and `-=`
+
+**Why:** These operators are used heavily during candle updates; regressions here would skew aggregates everywhere.
+
+### Comparison operators
+
+```cpp title="Comparison operators" file=<rootDir>/state/candle_cpp/tests/fixed_point_test.cpp#L108-L133 showLineNumbers
+```
+
+**What:** Validates equality and ordering.
+
+**How:** Exercises `==`, `!=`, `<`, `<=`, `>`, `>=` across equal and unequal values.
+
+**Why:** Comparisons are used for high/low tracking and for sanity checks in tests and code paths.
+
+### Multiplication: fp_multiply
+
+```cpp title="Multiplication: fp_multiply" file=<rootDir>/state/candle_cpp/tests/fixed_point_test.cpp#L139-L193 showLineNumbers
+```
+
+**What:** Validates the fixed-point multiplication helper.
+
+**How:** Covers:
+
+- integer * integer
+- fractional factors
+- negative sign behavior
+- large values and zero
+
+**Why:** Fixed-point multiplication must use a wider intermediate type to avoid overflow; these tests lock that behavior in.
+
+### Division: fp_divide
+
+```cpp title="Division: fp_divide" file=<rootDir>/state/candle_cpp/tests/fixed_point_test.cpp#L198-L250 showLineNumbers
+```
+
+**What:** Validates the fixed-point division helper.
+
+**How:** Covers:
+
+- integer and fractional division
+- negative sign behavior
+- division by zero throws
+- large value scaling
+
+**Why:** Division shows up in derived quantities (e.g., computing prices); defined error behavior (throw on divide-by-zero) is important for safety.
+
+### Edge cases and precision
+
+```cpp title="Edge cases and precision" file=<rootDir>/state/candle_cpp/tests/fixed_point_test.cpp#L256-L279 showLineNumbers
+```
+
+**What:** Checks that tiny values and chained operations behave reasonably.
+
+**How:** Exercises:
+
+- very small fractional multiplication (precision and scaling)
+- chained multiply that should round back to 1.0
+- `to_string()` is non-empty
+
+**Why:** These cases catch subtle rounding and representation bugs that can appear only at extreme magnitudes.
+
+### Internal 128-bit helpers
+
+```cpp title="Internal 128-bit helpers" file=<rootDir>/state/candle_cpp/tests/fixed_point_test.cpp#L285-L325 showLineNumbers
+```
+
+**What:** Validates helper functions used to implement overflow-safe arithmetic.
+
+**How:** Tests `multiply_64x64_to_128` and `fits_in_int64` under:
+
+- small values
+- large values that overflow 64-bit
+- negative values and sign extension
+
+**Why:** The fixed-point implementation depends on correct 128-bit intermediate math; these tests protect that foundation.
+
+### Test binary main
+
+```cpp title="Test binary main" file=<rootDir>/state/candle_cpp/tests/fixed_point_test.cpp#L327-L334 showLineNumbers
+```
+
+**What:** Standard GoogleTest `main`.
+
+**How:** Initializes the test framework and runs all tests.
+
+**Why:** Keeps this suite runnable as a standalone executable in the CMake build.
+

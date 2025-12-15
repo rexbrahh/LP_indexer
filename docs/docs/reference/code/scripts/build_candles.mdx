@@ -1,0 +1,58 @@
+---
+title: "scripts/build_candles.sh"
+---
+
+This page is an **annotated source reference**. Code blocks are imported from the repository at build time.
+
+## What this file is
+
+`scripts/build_candles.sh` builds the C++ candle engine module (`state/candle_cpp`) using CMake.
+
+## Why this file exists
+
+The candle engine is a separate C++ build graph; having a one-command build script makes it easy for engineers to compile and run tests locally without remembering CMake invocation details.
+
+## Full source
+
+```bash title="scripts/build_candles.sh" file=<rootDir>/scripts/build_candles.sh showLineNumbers
+```
+
+## Walkthrough (by block)
+
+### Script header + paths
+
+```bash title="Script header + paths" file=<rootDir>/scripts/build_candles.sh#L1-L10 showLineNumbers
+```
+
+**What:** Enables basic error handling and computes the project/build directory paths.
+
+**How:** Uses the script’s location to find the repo root and sets `CANDLE_DIR` and `BUILD_DIR`.
+
+**Why:** Making paths repo-relative avoids reliance on the current working directory.
+
+### Configure and build with CMake
+
+```bash title="Configure and build with CMake" file=<rootDir>/scripts/build_candles.sh#L12-L28 showLineNumbers
+```
+
+**What:** Runs the two-phase CMake build (`configure` then `build`).
+
+**How:**
+
+- creates `BUILD_DIR`
+- runs `cmake ..` from inside the build directory
+- runs `cmake --build .`
+
+**Why:** Keeping configuration and build explicit makes it easier to debug toolchain/dependency issues.
+
+### Output: where tests live
+
+```bash title="Output: where tests live" file=<rootDir>/scripts/build_candles.sh#L30-L41 showLineNumbers
+```
+
+**What:** Prints the locations of compiled test binaries and how to run them.
+
+**How:** Suggests using `ctest --output-on-failure`.
+
+**Why:** Developers typically build the module to run tests; printing commands lowers friction for onboarding.
+

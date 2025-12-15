@@ -1,0 +1,36 @@
+---
+title: "ops/clickhouse/ohlcv_1s.sql"
+---
+
+This page is an **annotated source reference**. Code blocks are imported from the repository at build time.
+
+## What this file is
+
+`ops/clickhouse/ohlcv_1s.sql` defines the `ohlcv_1s` table used to persist 1-second candles.
+
+## Why this file exists
+
+Candles are a core “serve” primitive. Persisting candles by timeframe enables efficient API queries and analytics without aggregating raw trades on every request.
+
+## Full source
+
+```sql title="ops/clickhouse/ohlcv_1s.sql" file=<rootDir>/ops/clickhouse/ohlcv_1s.sql showLineNumbers
+```
+
+## Walkthrough (by statement)
+
+### CREATE TABLE ohlcv_1s
+
+```sql title="CREATE TABLE ohlcv_1s" file=<rootDir>/ops/clickhouse/ohlcv_1s.sql#L1-L19 showLineNumbers
+```
+
+**What:** Creates a ReplacingMergeTree table for 1-second candles keyed by `(chain_id, pair_id, pool_id, window_start)`.
+
+**How:** Columns mirror `dex.sol.v1.Candle`:
+
+- prices are stored as `*_px_q32` fixed-point integers
+- VWAP and volumes use high-precision decimals
+- `updated_at` drives replacement semantics (latest write wins)
+
+**Why:** Candles may be corrected/re-emitted; ReplacingMergeTree allows idempotent updates while keeping query keys stable.
+

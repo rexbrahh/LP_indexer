@@ -1,0 +1,144 @@
+---
+title: "state/candle_cpp/src/publisher.cpp"
+---
+
+This page is an **annotated source reference**. Code blocks are imported from the repository at build time.
+
+## What this file is
+
+`state/candle_cpp/src/publisher.cpp` implements the publisher types declared in `include/publisher.hpp`.
+
+It includes:
+
+- `InMemoryPublisher`: stores emitted candles for tests/local use
+- `JetStreamPublisher`: connects to NATS, builds subjects, serializes `dex.sol.v1.Candle`, and publishes via JetStream
+
+## Why this file exists
+
+Publishing is an I/O boundary with third-party dependencies (NATS client, protobuf serialization).
+
+Keeping this in a `.cpp`:
+
+- prevents NATS/protobuf headers from infecting unrelated translation units
+- keeps the candle engine core (`candle_worker.*`) focused on aggregation
+- provides a single place to reason about subject naming and publish semantics
+
+## Full source
+
+```cpp title="state/candle_cpp/src/publisher.cpp" file=<rootDir>/state/candle_cpp/src/publisher.cpp showLineNumbers
+```
+
+## Walkthrough (by declaration)
+
+### includes + namespace
+
+```cpp title="includes + namespace" file=<rootDir>/state/candle_cpp/src/publisher.cpp#L1-L13 showLineNumbers
+```
+
+**What:** Pulls in publisher headers, generated protobuf C++ bindings, and the NATS C client.
+
+**How:** The file includes `dex/sol/v1/core.pb.h` to build `dex::sol::v1::Candle` messages and `<nats.h>` for NATS/JetStream APIs.
+
+**Why:** Publishing is the integration layer between in-memory engine types and the canonical protobuf schema.
+
+### InMemoryPublisher::publish(...)
+
+```cpp title="InMemoryPublisher::publish(...)" file=<rootDir>/state/candle_cpp/src/publisher.cpp#L15-L21 showLineNumbers
+```
+
+**What:** Stores an emitted candle in an in-memory vector.
+
+**How:** Ignores `pair_id` and `window` for now, guards the vector with a mutex, and appends the candle.
+
+**Why:** Tests generally care about “what candles were emitted” rather than the exact subject routing; keeping this simple makes it a reliable sink.
+
+### InMemoryPublisher::snapshot()
+
+```cpp title="InMemoryPublisher::snapshot()" file=<rootDir>/state/candle_cpp/src/publisher.cpp#L23-L26 showLineNumbers
+```
+
+**What:** Returns a copy of all emitted candles so far.
+
+**How:** Locks the mutex and returns the vector by value (copy).
+
+**Why:** Copying provides a stable snapshot that callers can inspect without holding locks or worrying about concurrent mutation.
+
+### Helper functions (anonymous namespace)
+
+```cpp title="Helper functions (anonymous namespace)" file=<rootDir>/state/candle_cpp/src/publisher.cpp#L28-L63 showLineNumbers
+```
+
+**What:** Small internal helpers for subject formatting and error conversion.
+
+**How:**
+
+- `windowToString` maps `WindowSize` → canonical labels (`1m`, `5m`, `1h`, …).
+- `toUint64` clamps negative fixed-point volumes to zero for protobuf fields.
+- `natsErrorMessage` turns a `natsStatus` into a readable message string.
+
+**Why:** Keeping helpers file-local avoids polluting the public API and makes publisher implementation easier to read.
+
+### JetStreamPublisher::JetStreamPublisher(...)
+
+```cpp title="JetStreamPublisher::JetStreamPublisher(...)" file=<rootDir>/state/candle_cpp/src/publisher.cpp#L65-L99 showLineNumbers
+```
+
+**What:** Constructs a JetStream publisher by connecting to NATS and creating a JetStream context.
+
+**How:**
+
+- Creates a `natsOptions` object and configures the server URL (defaulting to localhost if empty).
+- Connects a NATS connection (`natsConnection_Connect`).
+- Creates a JetStream context (`natsConnection_JetStream`).
+- Throws `std::runtime_error` on failures, including readable NATS error text.
+
+**Why:** Publishing should fail fast on misconfiguration or missing connectivity; throwing in the constructor prevents running the engine with a broken publisher.
+
+### JetStreamPublisher::~JetStreamPublisher()
+
+```cpp title="JetStreamPublisher::~JetStreamPublisher()" file=<rootDir>/state/candle_cpp/src/publisher.cpp#L101-L111 showLineNumbers
+```
+
+**What:** Cleans up JetStream and NATS resources.
+
+**How:** Destroys the JetStream context, closes the connection, then destroys it.
+
+**Why:** Explicit cleanup avoids resource leaks in long-running services and in tests/tools that create and destroy publishers repeatedly.
+
+### JetStreamPublisher helpers
+
+```cpp title="JetStreamPublisher helpers" file=<rootDir>/state/candle_cpp/src/publisher.cpp#L113-L136 showLineNumbers
+```
+
+**What:** Helper methods for subject construction and token sanitization.
+
+**How:**
+
+- `window_label` delegates to the `WindowSize → string` mapping.
+- `sanitize_token` replaces non-alphanumeric characters with `_` to keep subjects safe.
+- `build_subject` composes `subject_root + ".candle." + window + "." + pair_id`.
+
+**Why:** Subjects are part of the operational contract: consistent naming ensures consumers can subscribe with predictable wildcards and avoids invalid subject tokens.
+
+### JetStreamPublisher::publish(...)
+
+```cpp title="JetStreamPublisher::publish(...)" file=<rootDir>/state/candle_cpp/src/publisher.cpp#L138-L204 showLineNumbers
+```
+
+**What:** Serializes a candle into `dex.sol.v1.Candle` protobuf bytes and publishes it to JetStream.
+
+**How:** The function:
+
+1. Validates that a JetStream context exists.
+2. Constructs a `dex::sol::v1::Candle` and fills core fields:
+   - chain/pair/timeframe/window_start/provisional
+   - OHLC prices (Q32.32 raw)
+   - trade count
+   - volumes as `U128` (currently `hi=0`, `lo=...`).
+3. Serializes the protobuf to a string payload.
+4. Builds a subject and a message ID (`Msg-Id`) using subject + window start time.
+5. Publishes via `js_Publish` under a mutex.
+6. Destroys the ack and throws on publish failure.
+
+**Why:** This is the schema boundary of the engine: it ensures emitted candles conform to the canonical protobuf contract and are published with deterministic subjects/IDs for downstream consumption and deduplication.
+

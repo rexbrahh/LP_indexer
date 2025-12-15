@@ -1,0 +1,162 @@
+---
+title: "proto/dex/sol/v1/core.proto"
+---
+
+This page is an **annotated source reference**. Code blocks are imported from the repository at build time.
+
+## What this file is
+
+`proto/dex/sol/v1/core.proto` defines the **canonical wire schema** for the LP indexer pipeline.
+
+These messages are the stable contract between:
+
+- ingestion/decoding (producers)
+- sinks and serving layers (consumers)
+- backfill and replay tooling
+
+Bindings are generated into:
+
+- Go: `gen/go/dex/sol/v1`
+- C++: `gen/cpp/dex/sol/v1`
+
+## Why this file exists
+
+The pipeline needs a typed, versionable representation of core domain events:
+
+- swap events (normalized across DEXes)
+- pool snapshots
+- candles
+- auxiliary metadata (transaction/block context, wallet heuristics)
+
+Using Protobuf gives:
+
+- stable binary encoding for NATS/JetStream payloads
+- explicit field numbering for backward-compatible evolution
+- multi-language support (Go for services, C++ for state engines)
+
+## Full source
+
+```protobuf title="proto/dex/sol/v1/core.proto" file=<rootDir>/proto/dex/sol/v1/core.proto showLineNumbers
+```
+
+## Walkthrough (by declaration)
+
+### syntax + package + go_package
+
+```protobuf title="syntax + package + go_package" file=<rootDir>/proto/dex/sol/v1/core.proto#L1-L5 showLineNumbers
+```
+
+**What:** Declares the file as `proto3`, sets the Protobuf package, and configures the Go package import path.
+
+**How:**
+
+- `proto3` enables the proto3 semantics (default values, presence rules, etc.).
+- `package dex.sol.v1;` defines the logical Protobuf namespace.
+- `option go_package = "...;dexsolv1";` controls the generated Go package path and name.
+
+**Why:** The package and go_package settings ensure generated bindings land in predictable module locations and avoid import collisions across proto packages.
+
+### message U128
+
+```protobuf title="message U128" file=<rootDir>/proto/dex/sol/v1/core.proto#L7-L10 showLineNumbers
+```
+
+**What:** Represents a 128-bit unsigned integer as two 64-bit limbs (`hi`, `lo`).
+
+**How:** Many on-chain quantities (especially volumes and accumulator numerators/denominators) can exceed 64-bit ranges. This message provides a transport-friendly representation without relying on language-specific big-integer types.
+
+**Why:** Protobuf does not have a native `uint128` type; encoding as `(hi, lo)` keeps the wire format explicit and cross-language.
+
+### message BlockHead
+
+```protobuf title="message BlockHead" file=<rootDir>/proto/dex/sol/v1/core.proto#L12-L17 showLineNumbers
+```
+
+**What:** Minimal block/slot metadata for anchoring events in time and chain context.
+
+**How:** Fields capture:
+
+- chain identity (`chain_id`)
+- slot number (`slot`)
+- a timestamp in seconds (`ts_sec`)
+- a status string (`status`)
+
+**Why:** Many downstream tasks need to correlate events to a specific slot and time boundary; keeping this small makes it cheap to include in payloads when needed.
+
+### message TxMeta
+
+```protobuf title="message TxMeta" file=<rootDir>/proto/dex/sol/v1/core.proto#L19-L27 showLineNumbers
+```
+
+**What:** Transaction-level metadata associated with decoded events.
+
+**How:** Includes chain/slot, transaction signature, success flag, compute-unit usage/price, and log messages.
+
+**Why:** Decoders and analytics often need more than “a swap happened”: CU usage, success/failure, and logs are critical for debugging and for building quality heuristics.
+
+### message SwapEvent
+
+```protobuf title="message SwapEvent" file=<rootDir>/proto/dex/sol/v1/core.proto#L29-L51 showLineNumbers
+```
+
+**What:** Canonical representation of a DEX swap, normalized across different programs (Raydium, Orca, Meteora, ...).
+
+**How:** The message carries:
+
+- identity and provenance: `chain_id`, `slot`, `sig`, `index`, `program_id`
+- pool + pair: `pool_id`, `mint_base`, `mint_quote`, decimals
+- amounts: `base_in/base_out`, `quote_in/quote_out`
+- pool state: pre/post `sqrt_price_q64_*`, `reserves_*`, `fee_bps`
+- lifecycle flags: `provisional` (subject to reorg/correction), `is_undo` (correction event)
+
+**Why:** A single normalized swap schema enables downstream sinks and analytics to be DEX-agnostic while still retaining enough fields for pricing and liquidity computations.
+
+### message PoolSnapshot
+
+```protobuf title="message PoolSnapshot" file=<rootDir>/proto/dex/sol/v1/core.proto#L53-L64 showLineNumbers
+```
+
+**What:** Periodic or derived snapshot of a pool’s state at a slot.
+
+**How:** Captures identifiers (pool and mints) and state fields (`sqrt_price_q64`, reserves, fee, liquidity).
+
+**Why:** Snapshots are useful for fast point-in-time queries and for reconstructing state without replaying every swap event.
+
+### message Candle
+
+```protobuf title="message Candle" file=<rootDir>/proto/dex/sol/v1/core.proto#L66-L83 showLineNumbers
+```
+
+**What:** Canonical OHLCV candle representation for a `(pair_id, pool_id, timeframe, window_start)` key.
+
+**How:**
+
+- `timeframe` + `window_start` define the bucket.
+- `provisional`/`is_correction` communicate whether the candle is final or a correction.
+- prices are stored as fixed-point `Q32` ints (`*_px_q32`) for determinism.
+- VWAP is represented as a rational (`vwap_num`, `vwap_den`) using `U128`.
+- volumes are stored as `U128` (`vol_base`, `vol_quote`).
+- `trades` counts the number of swaps contributing to the candle.
+
+Protobuf field numbers are part of the compatibility contract; note that this message intentionally uses non-contiguous field numbers (e.g. prices start at field `10`). Do not renumber fields when evolving the schema.
+
+**Why:** Candles are a core “serve” primitive; fixed-point encoding and explicit correction flags make them reproducible across backfills and resilient to reorg handling.
+
+### message WalletHeuristics
+
+```protobuf title="message WalletHeuristics" file=<rootDir>/proto/dex/sol/v1/core.proto#L85-L94 showLineNumbers
+```
+
+**What:** Derived attributes about a wallet’s recent behavior (used for heuristics/labeling).
+
+**How:** Includes first-seen slot, swap counts over windows, and boolean flags like `is_fresh` and `is_sniper`, plus a `bundled_pct` ratio.
+
+**Why:** Heuristic signals are often computed asynchronously and consumed by dashboards/alerts; defining them in the core schema makes them easy to publish and consume consistently.
+
+## Regenerating bindings
+
+Do not edit generated files under `gen/` by hand. Regenerate them from `proto/` after schema changes:
+
+```bash
+make proto-gen
+```

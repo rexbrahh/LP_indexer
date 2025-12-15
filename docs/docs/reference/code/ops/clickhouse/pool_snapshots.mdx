@@ -1,0 +1,32 @@
+---
+title: "ops/clickhouse/pool_snapshots.sql"
+---
+
+This page is an **annotated source reference**. Code blocks are imported from the repository at build time.
+
+## What this file is
+
+`ops/clickhouse/pool_snapshots.sql` defines the `pool_snapshots` table used to persist pool state snapshots.
+
+## Why this file exists
+
+Snapshots allow downstream queries to retrieve pool state at a slot without replaying every swap. They also support building derived analytics (liquidity tracking, fee changes, etc.).
+
+## Full source
+
+```sql title="ops/clickhouse/pool_snapshots.sql" file=<rootDir>/ops/clickhouse/pool_snapshots.sql showLineNumbers
+```
+
+## Walkthrough (by statement)
+
+### CREATE TABLE pool_snapshots
+
+```sql title="CREATE TABLE pool_snapshots" file=<rootDir>/ops/clickhouse/pool_snapshots.sql#L1-L15 showLineNumbers
+```
+
+**What:** Creates a MergeTree table keyed by `(chain_id, pool_id, slot)` and partitioned by day.
+
+**How:** Columns align with the snapshot schema (`dex.sol.v1.PoolSnapshot`-like fields): price (`sqrt_q64`), reserves, fee bps, and liquidity.
+
+**Why:** Partitioning by date and ordering by pool + slot supports efficient “latest snapshot” and “history by pool” queries.
+

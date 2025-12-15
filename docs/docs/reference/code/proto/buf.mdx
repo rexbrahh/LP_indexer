@@ -1,0 +1,47 @@
+---
+title: "proto/buf.yaml"
+---
+
+This page is an **annotated source reference**. Code blocks are imported from the repository at build time.
+
+## What this file is
+
+`proto/buf.yaml` is the Buf configuration for the repository’s Protobuf module.
+
+It defines the “module boundary” for:
+
+- linting / breaking-change checks
+- code generation via `buf generate` (invoked by `make proto-gen`)
+
+## Why this file exists
+
+Protobuf schema changes ripple across:
+
+- Go and C++ generated bindings (under `gen/`)
+- message compatibility between publishers and consumers
+
+Buf provides a repeatable, tool-driven workflow for keeping schema evolution safe and generation consistent.
+
+## Full source
+
+```yaml title="proto/buf.yaml" file=<rootDir>/proto/buf.yaml showLineNumbers
+```
+
+## Walkthrough (by section)
+
+### buf module config
+
+```yaml title="buf module config" file=<rootDir>/proto/buf.yaml#L1-L9 showLineNumbers
+```
+
+**What:** Declares this directory as a Buf module and configures basic lint/breaking behavior.
+
+**How:** This file:
+
+- sets the module config version (`v1`)
+- enables the default lint rule set
+- enables file-level breaking-change checks
+
+The repo uses `buf` (see `buf.work.yaml` and `buf.gen.yaml`) to lint and generate bindings. This file is the module-level entrypoint Buf expects in the `proto/` tree.
+
+**Why:** Having an explicit module config makes Protobuf generation deterministic across machines and CI, and it keeps schema hygiene enforceable via tooling.

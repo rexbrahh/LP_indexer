@@ -1,0 +1,36 @@
+---
+title: "ops/clickhouse/holders_estimate.sql"
+---
+
+This page is an **annotated source reference**. Code blocks are imported from the repository at build time.
+
+## What this file is
+
+`ops/clickhouse/holders_estimate.sql` defines a table for holder-count estimates over time windows.
+
+## Why this file exists
+
+Holder counts are expensive to compute exactly on-chain. Persisting estimates with a `method` label supports:
+
+- comparing estimation methods
+- time-series dashboards
+- incremental refreshes (ReplacingMergeTree)
+
+## Full source
+
+```sql title="ops/clickhouse/holders_estimate.sql" file=<rootDir>/ops/clickhouse/holders_estimate.sql showLineNumbers
+```
+
+## Walkthrough (by statement)
+
+### CREATE TABLE holders_estimate
+
+```sql title="CREATE TABLE holders_estimate" file=<rootDir>/ops/clickhouse/holders_estimate.sql#L1-L9 showLineNumbers
+```
+
+**What:** Creates a ReplacingMergeTree table keyed by `(chain_id, mint, window_start)`.
+
+**How:** `updated_at` enables “latest write wins” behavior for periodic recomputation.
+
+**Why:** Estimates are recomputed as new data arrives; replacement semantics keep the table up-to-date without complex migration logic.
+

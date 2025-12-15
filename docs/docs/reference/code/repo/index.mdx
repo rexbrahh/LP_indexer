@@ -1,0 +1,18 @@
+---
+title: "repo root build & dev config"
+---
+
+This section documents “repo root” build and development configuration files.
+
+## What to read first
+
+- `Makefile`: canonical developer workflows (build/test/up/ops/e2e)
+- `docker-compose.yml`: local infra (NATS, ClickHouse, MinIO, Postgres)
+- `flake.nix` / `shell.nix`: Nix-based dev shells and CI checks
+
+## Other useful references
+
+- `go.mod`: dependency roots and Go version
+- `.golangci.yml`: lint configuration used by CI and `make lint`
+- `buf.gen.yaml` / `buf.work.yaml`: Buf workspace + generation config for `proto/`
+- `conductor.json`: optional project-level orchestration integration

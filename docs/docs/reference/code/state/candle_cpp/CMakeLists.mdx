@@ -1,0 +1,104 @@
+---
+title: "state/candle_cpp/CMakeLists.txt"
+---
+
+This page is an **annotated source reference**. Code blocks are imported from the repository at build time.
+
+## What this file is
+
+`state/candle_cpp/CMakeLists.txt` is the CMake build definition for the C++ candle engine module.
+
+It:
+
+- configures the project as C++20
+- pulls in dependencies (Protobuf, Abseil, NATS C client, GoogleTest)
+- builds a static library (`candle_cpp`)
+- wires up unit tests and a small replay tool
+
+## Why this file exists
+
+The candle engine is a C++ module with non-trivial third-party dependencies.
+
+Using CMake provides:
+
+- reproducible builds across Linux/macOS/CI
+- dependency fetching via `FetchContent`
+- an explicit target graph (library vs tests vs tools)
+
+## Full source
+
+```cmake title="state/candle_cpp/CMakeLists.txt" file=<rootDir>/state/candle_cpp/CMakeLists.txt showLineNumbers
+```
+
+## Walkthrough (by section)
+
+### Project setup + repo root wiring
+
+```cmake title="Project setup + repo root wiring" file=<rootDir>/state/candle_cpp/CMakeLists.txt#L1-L11 showLineNumbers
+```
+
+**What:** Declares the CMake project and computes paths to the repository root and generated Protobuf C++ sources.
+
+**How:** `REPO_ROOT` is derived from the module directory; `PROTO_GEN_CPP_DIR` points at `gen/cpp`, which is where `make proto-gen` writes generated bindings.
+
+**Why:** The candle engine links against generated protobuf C++ code, so the build must know where the repo-root `gen/` directory is.
+
+### NATS C client dependency (FetchContent)
+
+```cmake title="NATS C client dependency (FetchContent)" file=<rootDir>/state/candle_cpp/CMakeLists.txt#L12-L23 showLineNumbers
+```
+
+**What:** Fetches and builds the `nats.c` client library as part of the build.
+
+**How:** It disables upstream tests/examples/util binaries and enables TLS support before calling `FetchContent_MakeAvailable(natsc)`.
+
+**Why:** JetStream publishing is a core output path for this engine; embedding the dependency keeps builds self-contained.
+
+### C++ standard + compiler flags
+
+```cmake title="C++ standard + compiler flags" file=<rootDir>/state/candle_cpp/CMakeLists.txt#L24-L33 showLineNumbers
+```
+
+**What:** Forces the project to build as C++20 with common warnings and build-type specific flags.
+
+**How:** `CMAKE_CXX_STANDARD 20` sets the language level. `-Wall -Wextra -Wpedantic` improves hygiene; debug/release flags tune optimization and symbols.
+
+**Why:** The engine uses modern C++ features (threads, chrono, smart pointers) and benefits from strict warnings during development.
+
+### Library target: sources, includes, and linkage
+
+```cmake title="Library target: sources, includes, and linkage" file=<rootDir>/state/candle_cpp/CMakeLists.txt#L34-L52 showLineNumbers
+```
+
+**What:** Defines the `candle_cpp` static library and links required dependencies.
+
+**How:**
+
+- `CANDLE_SOURCES` includes the engine implementation plus generated `core.pb.cc`.
+- `target_include_directories` exposes `include/` and `gen/cpp/` to consumers, and NATS internals privately.
+- `target_link_libraries` links protobuf, absl strings, and the static NATS client.
+
+**Why:** Treating the engine as a library enables both tests and tools to reuse the same compiled core without duplicating build logic.
+
+### GoogleTest + unit tests
+
+```cmake title="GoogleTest + unit tests" file=<rootDir>/state/candle_cpp/CMakeLists.txt#L53-L79 showLineNumbers
+```
+
+**What:** Fetches GoogleTest and wires three unit test binaries.
+
+**How:** Each test executable links against `candle_cpp` plus `GTest::gtest`/`GTest::gtest_main` and `pthread`.
+
+**Why:** The correctness of fixed-point arithmetic and window finalization logic is critical; tests provide guardrails for refactors.
+
+### Tool: candle_replay
+
+```cmake title="Tool: candle_replay" file=<rootDir>/state/candle_cpp/CMakeLists.txt#L80-L81 showLineNumbers
+```
+
+**What:** Builds a small CLI tool for replaying trade samples through the candle engine.
+
+**How:** `candle_replay` links against `candle_cpp` and the necessary publish dependencies.
+
+**Why:** A replay tool is valuable for local debugging, performance measurement, and end-to-end validation in environments where the full Go pipeline is not running.
+

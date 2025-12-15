@@ -1,0 +1,148 @@
+---
+title: "Makefile"
+---
+
+This page is an **annotated source reference**. Code blocks are imported from the repository at build time.
+
+## What this file is
+
+`Makefile` is the top-level workflow entrypoint for the repo.
+
+It defines targets for:
+
+- bootstrapping toolchains
+- generating protobuf bindings
+- building and testing
+- starting/stopping local infrastructure
+- initializing/verifying JetStream
+- running services and E2E harnesses
+
+## Why this file exists
+
+This repository spans multiple components (Go services, protobuf generation, C++ state engines, external infra).
+
+A Makefile provides:
+
+- a discoverable, self-documenting interface (`make help`)
+- consistent commands for CI and onboarding
+- a single place to encode “how the repo is intended to be used”
+
+## Full source
+
+```makefile title="Makefile" file=<rootDir>/Makefile showLineNumbers
+```
+
+## Walkthrough (by section)
+
+### Phony targets + shared variables
+
+```makefile title="Phony targets + shared variables" file=<rootDir>/Makefile#L1-L13 showLineNumbers
+```
+
+**What:** Declares phony targets, finds proto files, and chooses a docker compose command.
+
+**How:**
+
+- `PROTO_FILES` lists all `proto/**/*.proto` files (used by `proto-gen`).
+- `DOCKER_COMPOSE` selects `docker-compose` when available, otherwise `docker compose`.
+- `DOCKER_COMPOSE_FILE` defaults to `docker-compose.yml` but is overrideable.
+
+**Why:** Centralizing these variables prevents repeated boilerplate and makes the rest of the Makefile portable across different developer setups.
+
+### help target
+
+```makefile title="help target" file=<rootDir>/Makefile#L14-L36 showLineNumbers
+```
+
+**What:** Prints a summary of available Make targets.
+
+**How:** Uses `@echo` to render a short command menu.
+
+**Why:** Onboarding is easier when “what can I run?” is one command away.
+
+### bootstrap target
+
+```makefile title="bootstrap target" file=<rootDir>/Makefile#L37-L46 showLineNumbers
+```
+
+**What:** Installs Go module deps and common generator tools (protoc plugins, buf).
+
+**How:** Runs `go mod download` and `go install ...@latest` for required tooling, with a warning if `protoc` is missing.
+
+**Why:** Protobuf generation and CI checks depend on these tools; `bootstrap` makes setup explicit.
+
+### proto-gen target
+
+```makefile title="proto-gen target" file=<rootDir>/Makefile#L47-L89 showLineNumbers
+```
+
+**What:** Regenerates protobuf bindings into `gen/go` and `gen/cpp`.
+
+**How:**
+
+- validates that proto files exist and `buf`/`protoc` are available
+- tries common Homebrew locations for `protoc` as well as `$PROTOBUF_PREFIX`
+- deletes and recreates `gen/go` and `gen/cpp`
+- invokes `protoc` with Go and C++ outputs
+
+**Why:** Generated bindings must stay in sync with `proto/`; this target makes regeneration deterministic and reviewable.
+
+### test + lint + build + clean
+
+```makefile title="test + lint + build + clean" file=<rootDir>/Makefile#L91-L117 showLineNumbers
+```
+
+**What:** Defines standard Go workflows and wires ClickHouse schema application.
+
+**How:**
+
+- `test` runs `go test ./...`
+- `lint` runs `go vet` and `golangci-lint`
+- `build` runs `go build ./...`
+- `clean` removes artifacts and runs `go clean`
+- `ops.clickhouse.apply` runs `scripts/apply_clickhouse_schema.sh`
+
+**Why:** These targets provide consistent entrypoints for CI and local development.
+
+### up/down: local infrastructure
+
+```makefile title="up/down: local infrastructure" file=<rootDir>/Makefile#L118-L144 showLineNumbers
+```
+
+**What:** Starts/stops local dependencies via docker compose.
+
+**How:**
+
+- `up` runs docker compose, sleeps briefly, and can optionally bootstrap JetStream when `BOOTSTRAP_JETSTREAM=1`.
+- `down` tears down the compose stack (or no-ops when missing).
+
+**Why:** Many components require NATS and ClickHouse; `make up` provides a reproducible local dev baseline.
+
+### JetStream ops targets
+
+```makefile title="JetStream ops targets" file=<rootDir>/Makefile#L145-L162 showLineNumbers
+```
+
+**What:** Initializes and verifies JetStream streams/consumers using the `nats` CLI.
+
+**How:** Applies `ops/jetstream/streams.dex.json` and `ops/jetstream/consumer.swaps.json`, then verifies they exist.
+
+**Why:** JetStream must be configured correctly before ingestors and sinks can run; these targets encode the expected shape.
+
+### Run targets + E2E harnesses
+
+```makefile title="Run targets + E2E harnesses" file=<rootDir>/Makefile#L163-L212 showLineNumbers
+```
+
+**What:** Convenience targets for running services and end-to-end validation.
+
+**How:**
+
+- `run.bridge` starts the bridge with a local subject map and metrics addr.
+- `run.ingestor.geyser` starts the geyser ingestor with program filters.
+- `check.bridge.metrics` runs the metrics smoke test script.
+- `candle-e2e` and `sink-e2e` run the corresponding scripts.
+- `demo.geyser` runs the geyser demo binary.
+
+**Why:** These targets reduce the mental overhead of remembering long env-var-heavy commands and keep onboarding workflows consistent.
+

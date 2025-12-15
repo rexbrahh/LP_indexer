@@ -1,0 +1,118 @@
+---
+title: "state/candle_cpp/include/publisher.hpp"
+---
+
+This page is an **annotated source reference**. Code blocks are imported from the repository at build time.
+
+## What this file is
+
+`state/candle_cpp/include/publisher.hpp` defines the **publishing boundary** for the C++ candle engine.
+
+It contains:
+
+- `CandlePublisher`: an abstract interface for “emit a candle”
+- `InMemoryPublisher`: a test-friendly implementation that stores emitted candles
+- `JetStreamPublisher`: a NATS/JetStream-backed publisher that serializes candles to protobuf
+
+## Why this file exists
+
+The candle engine’s job is aggregation, not storage.
+
+By isolating publishing behind an interface, the engine can:
+
+- unit test aggregation/finalization without networking
+- switch output targets (stdout, NATS, files, ClickHouse, etc.) without touching core logic
+- enforce a single “serialization boundary” where in-memory types become wire types
+
+## Full source
+
+```cpp title="state/candle_cpp/include/publisher.hpp" file=<rootDir>/state/candle_cpp/include/publisher.hpp showLineNumbers
+```
+
+## Walkthrough (by declaration)
+
+### pragma once + includes
+
+```cpp title="pragma once + includes" file=<rootDir>/state/candle_cpp/include/publisher.hpp#L1-L8 showLineNumbers
+```
+
+**What:** Declares this header and includes dependencies needed for the publisher interface and implementations.
+
+**How:** `candle_types.hpp` provides `Candle`/`WindowSize`. The standard headers provide threading primitives (`mutex`) and container types (`vector`).
+
+**Why:** Publishers need to be thread-safe because candle finalization and trade processing run concurrently.
+
+### NATS/JetStream forward declarations
+
+```cpp title="NATS/JetStream forward declarations" file=<rootDir>/state/candle_cpp/include/publisher.hpp#L9-L10 showLineNumbers
+```
+
+**What:** Forward-declares opaque structs from the NATS C client.
+
+**How:** `JetStreamPublisher` holds raw pointers to these types without exposing NATS headers in the public API.
+
+**Why:** Forward declarations keep compile times down and avoid leaking third-party headers to every translation unit that includes `publisher.hpp`.
+
+### struct JetStreamConfig
+
+```cpp title="struct JetStreamConfig" file=<rootDir>/state/candle_cpp/include/publisher.hpp#L14-L20 showLineNumbers
+```
+
+**What:** Configuration bundle for JetStream publishing.
+
+**How:** It includes:
+
+- connection and routing: `url`, `stream`, `subject_root`
+- identity: `chain_id`
+- publish behavior: `publish_timeout`
+
+**Why:** JetStream publishing requires a few operational knobs; keeping them in a struct keeps the publisher constructor stable and extensible.
+
+### class CandlePublisher
+
+```cpp title="class CandlePublisher" file=<rootDir>/state/candle_cpp/include/publisher.hpp#L22-L30 showLineNumbers
+```
+
+**What:** Abstract interface for “publish a candle”.
+
+**How:** `CandleWorker` calls `publish(pair_id, window, candle)` when it emits a candle (provisional or finalized).
+
+**Why:** This interface decouples aggregation from output side effects and enables dependency injection in tests.
+
+### class InMemoryPublisher
+
+```cpp title="class InMemoryPublisher" file=<rootDir>/state/candle_cpp/include/publisher.hpp#L32-L43 showLineNumbers
+```
+
+**What:** A simple publisher that stores emitted candles in memory.
+
+**How:** It pushes candles into `emitted_` under a mutex and exposes a `snapshot()` method for inspection.
+
+**Why:** Unit tests and local debugging need a sink that is deterministic and does not require external services.
+
+### class JetStreamPublisher
+
+```cpp title="class JetStreamPublisher" file=<rootDir>/state/candle_cpp/include/publisher.hpp#L45-L63 showLineNumbers
+```
+
+**What:** A publisher implementation that serializes candles to protobuf and publishes them to a JetStream subject.
+
+**How:**
+
+- It owns a `JetStreamConfig` and NATS/JetStream handles (`conn_`, `js_`).
+- It builds subjects from `subject_root`, window label, and sanitized `pair_id`.
+- It is guarded by a mutex so publishing is safe even if called concurrently.
+
+**Why:** JetStream is the repo’s primary message bus; publishing candles as protobuf makes them consumable by Go sinks and the serving layer.
+
+### namespace candle (close)
+
+```cpp title="namespace candle (close)" file=<rootDir>/state/candle_cpp/include/publisher.hpp#L65-L65 showLineNumbers
+```
+
+**What:** Closes the `candle` namespace for this header.
+
+**How:** Ends the namespace scope.
+
+**Why:** Keeps namespace boundaries explicit and prevents accidental symbol leakage.
+

@@ -1,0 +1,32 @@
+---
+title: "buf.work.yaml"
+---
+
+This page is an **annotated source reference**. Code blocks are imported from the repository at build time.
+
+## What this file is
+
+`buf.work.yaml` defines the Buf workspace for the repository.
+
+## Why this file exists
+
+Workspaces make it explicit which directories contain Buf modules and keep generation and linting pointed at the canonical `.proto` tree.
+
+## Full source
+
+```yaml title="buf.work.yaml" file=<rootDir>/buf.work.yaml showLineNumbers
+```
+
+## Walkthrough
+
+### version + directories
+
+```yaml title="version + directories" file=<rootDir>/buf.work.yaml#L1-L4 showLineNumbers
+```
+
+**What:** Declares a single-directory Buf workspace rooted at `proto/`.
+
+**How:** Buf treats `proto/` as the module directory for schema operations (lint/breaking/generate).
+
+**Why:** Keeping schema roots explicit reduces ambiguity and avoids accidentally generating from the wrong path.
+

@@ -1,0 +1,32 @@
+---
+title: "ops/clickhouse/ohlcv_1m.sql"
+---
+
+This page is an **annotated source reference**. Code blocks are imported from the repository at build time.
+
+## What this file is
+
+`ops/clickhouse/ohlcv_1m.sql` defines the `ohlcv_1m` table used to persist 1-minute candles.
+
+## Why this file exists
+
+1-minute candles are a common default granularity for charting and downstream analytics. Storing them directly avoids on-demand rollups.
+
+## Full source
+
+```sql title="ops/clickhouse/ohlcv_1m.sql" file=<rootDir>/ops/clickhouse/ohlcv_1m.sql showLineNumbers
+```
+
+## Walkthrough (by statement)
+
+### CREATE TABLE ohlcv_1m
+
+```sql title="CREATE TABLE ohlcv_1m" file=<rootDir>/ops/clickhouse/ohlcv_1m.sql#L1-L19 showLineNumbers
+```
+
+**What:** Creates a ReplacingMergeTree table for 1-minute candles.
+
+**How:** Same schema pattern as `ohlcv_1s`, but intended for 60s buckets.
+
+**Why:** Keeping one table per timeframe keeps ingestion simple and makes query patterns predictable for the API layer.
+

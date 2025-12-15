@@ -1,0 +1,107 @@
+---
+title: "state/candle_cpp/tools/candle_replay.cpp"
+---
+
+This page is an **annotated source reference**. Code blocks are imported from the repository at build time.
+
+## What this file is
+
+`state/candle_cpp/tools/candle_replay.cpp` is a small CLI tool that replays a CSV of trade events through the C++ candle engine.
+
+It is mainly a developer/operator tool for:
+
+- exercising the candle engine without running the full Go pipeline
+- publishing generated candles to JetStream for downstream validation
+- debugging performance and correctness on sample inputs
+
+## Why this file exists
+
+The candle engine is stateful and concurrent; it is helpful to have a standalone harness that can:
+
+- feed deterministic input events
+- run the same aggregation/finalization logic as production
+- publish results to the same message bus used elsewhere in the repo
+
+This tool makes it easy to validate “engine produces expected candles” end-to-end.
+
+## Full source
+
+```cpp title="state/candle_cpp/tools/candle_replay.cpp" file=<rootDir>/state/candle_cpp/tools/candle_replay.cpp showLineNumbers
+```
+
+## Walkthrough (by declaration)
+
+### includes
+
+```cpp title="includes" file=<rootDir>/state/candle_cpp/tools/candle_replay.cpp#L1-L10 showLineNumbers
+```
+
+**What:** Imports the candle engine headers and standard library utilities for IO and parsing.
+
+**How:** The tool uses `ifstream`/`getline` to stream input lines and `std::stoi`/`stod`/`stoull` to parse values.
+
+**Why:** Keeping the tool minimal (no external CSV libraries) makes it easy to run in constrained environments.
+
+### usage()
+
+```cpp title="usage()" file=<rootDir>/state/candle_cpp/tools/candle_replay.cpp#L14-L17 showLineNumbers
+```
+
+**What:** Prints CLI usage instructions.
+
+**How:** Writes a single usage line to stderr.
+
+**Why:** Clear help output makes this tool usable in CI and by engineers new to the repo.
+
+### parse_args(...)
+
+```cpp title="parse_args(...)" file=<rootDir>/state/candle_cpp/tools/candle_replay.cpp#L19-L48 showLineNumbers
+```
+
+**What:** Parses a small set of command line flags into configuration variables.
+
+**How:** It performs a linear scan over `argv` and supports:
+
+- `--input FILE` (required)
+- `--nats-url URL`, `--stream NAME`, `--subject-root ROOT` (JetStream publishing)
+- `--sleep-sec N` (wait for finalization/publish)
+- `--help`
+
+Unknown args or missing required args cause usage output and a `false` return.
+
+**Why:** Argument parsing is kept intentionally simple to reduce dependencies and keep behavior explicit.
+
+### to_fixed(...)
+
+```cpp title="to_fixed(...)" file=<rootDir>/state/candle_cpp/tools/candle_replay.cpp#L50-L52 showLineNumbers
+```
+
+**What:** Converts a double into the engine’s fixed-point `Q32.32` raw representation.
+
+**How:** Uses `candle::FixedPoint::from_double(value).raw()` and returns the underlying `int64_t`.
+
+**Why:** Input CSV values are typically human-readable floats; the engine operates in fixed-point for determinism, so conversion is needed at the ingestion boundary.
+
+### main(...)
+
+```cpp title="main(...)" file=<rootDir>/state/candle_cpp/tools/candle_replay.cpp#L56-L147 showLineNumbers
+```
+
+**What:** Reads a CSV input file, feeds trades into a running `CandleWorker`, and publishes emitted candles via JetStream.
+
+**How:** The main flow:
+
+1. Parse args and open the input file.
+2. Construct `CandleWorker` and a `JetStreamConfig` (NATS URL/stream/subject root).
+3. Configure the worker with a `JetStreamPublisher` (`set_jetstream_publisher`).
+4. Start the worker threads (`worker.start()`).
+5. Stream input lines:
+   - skip empty/comment lines
+   - parse `pair_id,timestamp,price,base,quote`
+   - convert numeric values to fixed-point
+   - call `worker.on_trade(...)`
+6. Sleep for a short period so the finalization loop can emit closed candles.
+7. Stop the worker cleanly (`worker.stop()`).
+
+**Why:** This tool provides a repeatable “feed events → see candles published” loop for debugging and validation without requiring live ingestion.
+

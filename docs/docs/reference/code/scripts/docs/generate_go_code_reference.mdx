@@ -1,0 +1,242 @@
+---
+title: "scripts/docs/generate_go_code_reference.go"
+---
+
+This page is an **annotated source reference**. Code blocks are imported from the repository at build time.
+
+## What this file is
+
+`scripts/docs/generate_go_code_reference.go` is the generator that scaffolds the **annotated-source reference pages** under:
+
+- `docs/docs/reference/code/**`
+
+Given a set of directories (defaults to core runtime directories), it:
+
+- finds `.go` files
+- parses them with the Go AST parser
+- emits an `.mdx` page per file containing:
+  - a full-source code import block
+  - per-declaration code excerpts with `What/How/Why` placeholders
+
+## Why this file exists
+
+The “full coverage” documentation style is intentionally verbose. Writing every page from scratch would be slow and inconsistent.
+
+This generator provides:
+
+- a repeatable baseline for new files
+- consistent page structure and headings
+- stable code excerpts based on AST positions (not brittle regex parsing)
+
+It also keeps docs maintainable by defaulting to **non-destructive** behavior (skip existing pages unless `-overwrite` is set).
+
+## Full source
+
+```go title="scripts/docs/generate_go_code_reference.go" file=<rootDir>/scripts/docs/generate_go_code_reference.go showLineNumbers
+```
+
+## Walkthrough (by declaration)
+
+### package main
+
+```go title="package main" file=<rootDir>/scripts/docs/generate_go_code_reference.go#L1-L1 showLineNumbers
+```
+
+**What:** Declares an executable `main` package for the generator CLI.
+
+**How:** Run it from the repo root (example):
+
+```bash
+go run ./scripts/docs/generate_go_code_reference.go
+```
+
+or target specific directories:
+
+```bash
+go run ./scripts/docs/generate_go_code_reference.go observability scripts/docs
+```
+
+**Why:** Treating the generator as a small Go program keeps it portable and easy to modify alongside the codebase it documents.
+
+### imports
+
+```go title="imports" file=<rootDir>/scripts/docs/generate_go_code_reference.go#L3-L16 showLineNumbers
+```
+
+**What:** Standard library packages for CLI parsing, filesystem walking, and Go AST parsing/formatting.
+
+**How:**
+
+- `go/parser`, `go/ast`, `go/token` parse Go files and locate declarations by line.
+- `go/format` prints AST nodes (used for receiver type formatting).
+- `filepath` + `io/fs` walk directories and build output paths.
+- `flag` configures CLI options (output dir, overwrite mode, etc.).
+
+**Why:** Using the Go toolchain’s own parser avoids hand-rolled parsing bugs and keeps the generator accurate as Go syntax evolves.
+
+### type (declBlock)
+
+**Symbols:** declBlock
+
+```go title="type (declBlock)" file=<rootDir>/scripts/docs/generate_go_code_reference.go#L18-L23 showLineNumbers
+```
+
+**What:** Represents one “documentable block” within a Go file: a title, a line range, and associated symbol names.
+
+**How:** `buildDeclBlocks` produces a slice of `declBlock` items for:
+
+- the `package` declaration
+- each `import`, `const`, `var`, `type`, and `func` block
+
+These blocks drive the “Walkthrough (by declaration)” section of each generated MDX page.
+
+**Why:** A dedicated struct makes the generator’s intent clear: we want stable, line-addressable blocks that map to declarations engineers care about.
+
+### func main
+
+**Symbols:** main
+
+```go title="func main" file=<rootDir>/scripts/docs/generate_go_code_reference.go#L25-L117 showLineNumbers
+```
+
+**What:** CLI entrypoint that discovers Go source files and writes MDX scaffolds for them.
+
+**How:** At a high level:
+
+1. Parse flags:
+   - `-root` repo root (defaults to current directory)
+   - `-out` output dir (defaults to `docs/docs/reference/code`)
+   - `-include-tests` include `*_test.go` files (default false)
+   - `-overwrite` overwrite existing pages (default false)
+2. Determine which directories to scan:
+   - if no args, use core dirs (`cmd`, `ingestor`, `decoder`, `sinks`, `api`, `bridge`, `backfill`)
+3. Walk each directory collecting `.go` files (optionally excluding tests).
+4. For each file:
+   - compute its repo-relative path
+   - compute the target MDX path that mirrors the source path
+   - skip existing pages unless `-overwrite`
+   - render content via `renderGoFileDoc`
+   - write the MDX file
+5. Print a summary (`generated=... skipped=...`).
+
+**Why:** This is the “factory” for the annotated-reference section: it automates page creation while leaving the actual explanations to humans (or later tooling).
+
+### func renderGoFileDoc
+
+**Symbols:** renderGoFileDoc
+
+```go title="func renderGoFileDoc" file=<rootDir>/scripts/docs/generate_go_code_reference.go#L119-L172 showLineNumbers
+```
+
+**What:** Renders a single Go file into a complete MDX document as a string.
+
+**How:** It:
+
+1. Reads the file contents.
+2. Parses the file into an AST (including comments).
+3. Builds decl blocks via `buildDeclBlocks`.
+4. Writes an MDX document with:
+   - frontmatter title set to the file’s repo-relative path
+   - a full-source code import block using `remark-code-import` and `<rootDir>`
+   - one section per decl block, each with a code excerpt and `What/How/Why` placeholders
+
+The `file=<rootDir>/...#Lx-Ly` syntax is consumed by `remark-code-import` at build time.
+
+**Why:** Keeping the whole page render in one function makes output structure easy to evolve (new headings, new conventions) without touching the directory-walking logic.
+
+### func buildDeclBlocks
+
+**Symbols:** buildDeclBlocks
+
+```go title="func buildDeclBlocks" file=<rootDir>/scripts/docs/generate_go_code_reference.go#L174-L219 showLineNumbers
+```
+
+**What:** Extracts a stable list of “documentation blocks” from a Go AST.
+
+**How:** It:
+
+- starts with a block for the `package` declaration
+- iterates file declarations:
+  - `*ast.FuncDecl` → one block titled `func (Recv) Name` (or `func Name`)
+  - `*ast.GenDecl` → blocks for `imports`, `const (...)`, `type (...)`, `var (...)`
+    - `genDeclNames` collects symbol names to include in the title and `**Symbols:**` list
+- uses `startLineWithDoc` so doc comments are included in the snippet range
+- sorts blocks by start line for stable order matching the file
+
+It intentionally keeps function titles MDX-safe (it does not include full signatures).
+
+**Why:** The AST provides correct boundaries and symbol names. This prevents the common failure modes of regex-based splitting (comments, multiline declarations, nested types).
+
+### func startLineWithDoc
+
+**Symbols:** startLineWithDoc
+
+```go title="func startLineWithDoc" file=<rootDir>/scripts/docs/generate_go_code_reference.go#L221-L226 showLineNumbers
+```
+
+**What:** Returns the line number where a declaration’s documentation snippet should start.
+
+**How:** If a declaration has a doc comment (`*ast.CommentGroup`), it starts at the comment’s position; otherwise it starts at the declaration position.
+
+**Why:** Including doc comments in the imported snippet helps the docs read naturally and preserves any intent already captured in source comments.
+
+### func genDeclNames
+
+**Symbols:** genDeclNames
+
+```go title="func genDeclNames" file=<rootDir>/scripts/docs/generate_go_code_reference.go#L228-L255 showLineNumbers
+```
+
+**What:** Extracts a sorted list of exported/unexported symbol names from a `*ast.GenDecl`.
+
+**How:** It:
+
+- visits `TypeSpec` and `ValueSpec` nodes
+- collects unique names into a map
+- sorts the result for stable output
+
+**Why:** Stable naming improves diffs and keeps generated titles consistent across machines and Go versions.
+
+### func formatFuncDeclTitle
+
+**Symbols:** formatFuncDeclTitle
+
+```go title="func formatFuncDeclTitle" file=<rootDir>/scripts/docs/generate_go_code_reference.go#L257-L266 showLineNumbers
+```
+
+**What:** Produces a human-readable, MDX-safe title for a function declaration.
+
+**How:** It prints:
+
+- `func Name` for free functions
+- `func (ReceiverType) Name` for methods (receiver type is formatted via `formatNode`)
+
+It intentionally avoids including the full signature because some Go syntax (notably channel types like `<-chan`) can be mis-parsed as JSX in MDX headings.
+
+**Why:** Titles become MDX headings and code-block titles; keeping them safe prevents doc build failures and keeps the sidebar navigation readable.
+
+### func formatNode
+
+**Symbols:** formatNode
+
+```go title="func formatNode" file=<rootDir>/scripts/docs/generate_go_code_reference.go#L268-L272 showLineNumbers
+```
+
+**What:** Formats an AST node back into Go source text.
+
+**How:** Uses `format.Node` to print the node into a buffer. Errors are ignored because the input AST is already validated by the parser.
+
+**Why:** This is used primarily for receiver type formatting; relying on Go’s formatter ensures output is idiomatic and stable.
+
+### func fatalf
+
+**Symbols:** fatalf
+
+```go title="func fatalf" file=<rootDir>/scripts/docs/generate_go_code_reference.go#L274-L277 showLineNumbers
+```
+
+**What:** Prints an error message and exits the process with a non-zero status.
+
+**How:** It writes to stderr (`os.Stderr`) with a consistent `error:` prefix and then calls `os.Exit(1)`.
+
+**Why:** This keeps failure paths terse and consistent for a small CLI tool that is typically run manually or in CI.

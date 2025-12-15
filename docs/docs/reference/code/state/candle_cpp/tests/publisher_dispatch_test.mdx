@@ -1,0 +1,58 @@
+---
+title: "tests/publisher_dispatch_test.cpp"
+---
+
+This page is an **annotated source reference**. Code blocks are imported from the repository at build time.
+
+## What this file is
+
+`publisher_dispatch_test.cpp` is a GoogleTest suite that validates `CandleWorker` can emit candles via an injected `CandlePublisher`.
+
+## Why this file exists
+
+Publishing is an architectural boundary:
+
+- the candle engine should not be tightly coupled to a specific output transport
+- tests should be able to verify behavior without requiring NATS/JetStream
+
+This suite demonstrates and locks in that dependency-injection design.
+
+## Full source
+
+```cpp title="state/candle_cpp/tests/publisher_dispatch_test.cpp" file=<rootDir>/state/candle_cpp/tests/publisher_dispatch_test.cpp showLineNumbers
+```
+
+## Walkthrough (by component)
+
+### StubPublisher: a test double for CandlePublisher
+
+```cpp title="StubPublisher" file=<rootDir>/state/candle_cpp/tests/publisher_dispatch_test.cpp#L5-L44 showLineNumbers
+```
+
+**What:** Implements a minimal `CandlePublisher` that records the last published candle.
+
+**How:**
+
+- Overrides `publish(...)` to store `pair_id`, `window`, and `candle` and increment a call counter.
+- Uses a `std::mutex` to keep getters thread-safe (the worker may emit from background threads).
+
+**Why:** This allows tests to verify that `emit_candle` routes through the publisher without introducing a real network dependency.
+
+### EmitsViaCustomPublisher
+
+```cpp title="EmitsViaCustomPublisher" file=<rootDir>/state/candle_cpp/tests/publisher_dispatch_test.cpp#L46-L73 showLineNumbers
+```
+
+**What:** Ensures that `CandleWorker::emit_candle` calls the injected publisher exactly once with the correct payload.
+
+**How:**
+
+- Constructs a worker and installs `StubPublisher` via `set_publisher`.
+- Creates a representative `Candle` struct and calls `emit_candle(...)`.
+- Asserts:
+  - call count is 1
+  - recorded pair/window match
+  - recorded candle fields match the input candle
+
+**Why:** The publish path is used by both live operation and replay tools; correctness here ensures downstream sinks receive the right candle data.
+

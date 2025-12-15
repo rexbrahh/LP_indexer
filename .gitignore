@@ -30,3 +30,6 @@ docs/external/orca-whirlpools/
 docs-archive/external/helius/
 docs-archive/external/meteora/
 docs-archive/external/orca-whirlpools/
+
+# Keep documentation sources trackable even if they share names with build artifacts.
+!docs/docs/reference/code/repo/makefile.mdx

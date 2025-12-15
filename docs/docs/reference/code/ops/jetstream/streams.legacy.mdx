@@ -1,0 +1,32 @@
+---
+title: "ops/jetstream/streams.legacy.json"
+---
+
+This page is an **annotated source reference**. Code blocks are imported from the repository at build time.
+
+## What this file is
+
+`ops/jetstream/streams.legacy.json` defines a legacy JetStream stream used during cutover.
+
+## Why this file exists
+
+Legacy consumers may still subscribe to older subject namespaces. The bridge can publish into this stream while the canonical pipeline is rolled out.
+
+## Full source
+
+```json title="ops/jetstream/streams.legacy.json" file=<rootDir>/ops/jetstream/streams.legacy.json showLineNumbers
+```
+
+## Walkthrough (by field)
+
+### legacy stream config object
+
+```json title="legacy stream config object" file=<rootDir>/ops/jetstream/streams.legacy.json#L1-L16 showLineNumbers
+```
+
+**What:** Declares a `legacy` stream and the subjects it retains.
+
+**How:** Similar to the canonical stream, but with legacy subject prefixes (`legacy.dex.*`). Note that some fields use slightly different names (`replicas` vs `num_replicas`) and a human duration string for `duplicate_window`.
+
+**Why:** Keeping legacy stream configuration explicit reduces operational risk during cutover and allows the bridge to be deployed predictably.
+

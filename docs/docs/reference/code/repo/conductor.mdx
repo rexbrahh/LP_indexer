@@ -1,0 +1,32 @@
+---
+title: "conductor.json"
+---
+
+This page is an **annotated source reference**. Code blocks are imported from the repository at build time.
+
+## What this file is
+
+`conductor.json` is a lightweight configuration file for the repo’s `.conductor/` integration.
+
+## Why this file exists
+
+Some developer environments use external orchestration tooling to standardize “setup” and “run” entrypoints across projects. This file is kept in the repo so those commands can be discovered and versioned.
+
+## Full source
+
+```json title="conductor.json" file=<rootDir>/conductor.json showLineNumbers
+```
+
+## Walkthrough
+
+### scripts
+
+```json title="scripts" file=<rootDir>/conductor.json#L1-L6 showLineNumbers
+```
+
+**What:** Defines `setup` and `run` script placeholders.
+
+**How:** Both are currently empty strings, meaning this repo does not rely on conductor scripts as a primary workflow.
+
+**Why:** Keeping the keys present allows the project to opt into conductor workflows later without reintroducing the file structure.
+

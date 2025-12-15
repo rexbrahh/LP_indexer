@@ -1,0 +1,129 @@
+---
+title: "tests/candle_finalize_test.cpp"
+---
+
+This page is an **annotated source reference**. Code blocks are imported from the repository at build time.
+
+## What this file is
+
+`candle_finalize_test.cpp` is a GoogleTest suite that focuses on candle **finalization behavior**:
+
+- how `CandleWindow` updates its watermark state when trades arrive
+- when old candles flip from `provisional=true` to `provisional=false`
+- how `CandleWorker` eventually emits finalized candles via its timing wheel
+
+## Why this file exists
+
+Finalization is the boundary between “still changing” candles and “ready to persist/publish” candles.
+
+If finalization is wrong, downstream consumers can:
+
+- store incomplete candles permanently
+- miss windows entirely
+- see duplicated or late-emitted candles
+
+## Full source
+
+```cpp title="state/candle_cpp/tests/candle_finalize_test.cpp" file=<rootDir>/state/candle_cpp/tests/candle_finalize_test.cpp showLineNumbers
+```
+
+## Walkthrough (by test)
+
+### Includes + namespace
+
+```cpp title="Includes + namespace" file=<rootDir>/state/candle_cpp/tests/candle_finalize_test.cpp#L1-L7 showLineNumbers
+```
+
+**What:** Pulls in GoogleTest and the candle engine headers under test.
+
+**How:** Tests use `candle_worker.hpp` and `fixed_point.hpp` and then `using namespace candle;` for brevity.
+
+**Why:** These tests act as “executable documentation” for the engine’s public API surface.
+
+### Candle default provisional state
+
+```cpp title="Candle default provisional state" file=<rootDir>/state/candle_cpp/tests/candle_finalize_test.cpp#L13-L16 showLineNumbers
+```
+
+**What:** Asserts a newly-constructed `Candle` starts as provisional.
+
+**How:** Constructs a `Candle` and checks `candle.provisional` is `true`.
+
+**Why:** This sets the default contract: candles begin life as “mutable” and only become “final” through explicit finalization.
+
+### Watermark updates on trade
+
+```cpp title="Watermark updates on trade" file=<rootDir>/state/candle_cpp/tests/candle_finalize_test.cpp#L18-L32 showLineNumbers
+```
+
+**What:** Verifies `CandleWindow::last_trade_time` tracks the latest trade timestamp.
+
+**How:** Calls `window.update(...)` twice with increasing timestamps and checks `last_trade_time` each time.
+
+**Why:** Finalization logic uses watermark state to decide which windows are safe to close.
+
+### Finalize old candles flips provisional and clears window state
+
+```cpp title="Finalize old candles flips provisional and clears state" file=<rootDir>/state/candle_cpp/tests/candle_finalize_test.cpp#L34-L68 showLineNumbers
+```
+
+**What:** Ensures old windows get finalized and removed from the active map.
+
+**How:**
+
+- Adds a trade to create a candle in a specific window.
+- Under a mutex, asserts that candle exists and is provisional.
+- Calls `finalize_old_candles(watermark)` where `watermark` is at/after the window close time.
+- Checks the returned candle is non-provisional and the internal `candles` map no longer contains that window.
+
+**Why:** Finalization should be an “emit then forget” operation: once a window is closed, it should not be mutated by later trades.
+
+### Does not finalize current window
+
+```cpp title="Does not finalize current window" file=<rootDir>/state/candle_cpp/tests/candle_finalize_test.cpp#L70-L94 showLineNumbers
+```
+
+**What:** Ensures a still-open window is not prematurely finalized.
+
+**How:** Calls `finalize_old_candles` with a watermark *before* the window close time and asserts nothing is finalized and the candle remains provisional.
+
+**Why:** Premature finalization would permanently “lock in” an incomplete candle.
+
+### Worker emits finalized candles
+
+```cpp title="Worker emits finalized candles" file=<rootDir>/state/candle_cpp/tests/candle_finalize_test.cpp#L96-L133 showLineNumbers
+```
+
+**What:** End-to-end validation that `CandleWorker` eventually emits a finalized candle.
+
+**How:**
+
+- Starts a worker with multiple shards.
+- Sends a trade with a timestamp sufficiently in the past that the timing wheel should close at least one window quickly.
+- Sleeps briefly to let the finalization tick run.
+- Reads `get_emitted_candles()` and asserts at least one finalized candle exists.
+
+**Why:** This test connects timing and finalization mechanics to observable output, catching regressions in background scheduling.
+
+### Multiple windows finalized
+
+```cpp title="Multiple windows finalized" file=<rootDir>/state/candle_cpp/tests/candle_finalize_test.cpp#L135-L168 showLineNumbers
+```
+
+**What:** Verifies that multiple historical windows finalize in one call.
+
+**How:** Inserts trades into three consecutive windows, advances the watermark to close the first two, and asserts exactly two candles are finalized.
+
+**Why:** The engine must handle backfilled or bursty trade streams where several windows can become eligible for finalization at once.
+
+### Test binary main
+
+```cpp title="Test binary main" file=<rootDir>/state/candle_cpp/tests/candle_finalize_test.cpp#L170-L176 showLineNumbers
+```
+
+**What:** Standard GoogleTest `main`.
+
+**How:** Initializes the test framework and runs all registered tests.
+
+**Why:** Keeps this test suite runnable as a standalone executable in the CMake build.
+

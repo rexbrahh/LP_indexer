@@ -1,0 +1,30 @@
+---
+title: "state/candle_cpp/tests"
+---
+
+This section documents the **GoogleTest suite** for the C++ candle engine.
+
+## What this directory is
+
+The files under `state/candle_cpp/tests/` validate:
+
+- fixed-point arithmetic correctness and edge cases
+- publisher dispatch behavior (dependency injection)
+- candle finalization logic and worker emission behavior
+
+## Why these tests exist
+
+The candle engine’s correctness depends on invariants that are easy to regress during performance-focused refactors:
+
+- arithmetic must be deterministic and overflow-safe
+- windowing must bucket timestamps consistently
+- finalized vs provisional candle transitions must behave predictably
+
+These tests act as executable documentation for those invariants.
+
+## Suggested reading order
+
+1. `fixed_point_test.cpp` (math primitives)
+2. `publisher_dispatch_test.cpp` (publisher injection and emit path)
+3. `candle_finalize_test.cpp` (finalization rules and worker emission)
+

@@ -1,0 +1,12 @@
+---
+title: "ops/clickhouse/"
+---
+
+This directory contains ClickHouse DDL used by sinks and analytics queries.
+
+## How to read
+
+- Start with `trades.sql` (core swap persistence table).
+- Then read `pool_snapshots.sql` and the `ohlcv_*` tables (candle persistence tables).
+- `all.sql` is a monolithic schema file used by some scripts for convenience.
+

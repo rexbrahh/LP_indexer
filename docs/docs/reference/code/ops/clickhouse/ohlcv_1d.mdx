@@ -1,0 +1,32 @@
+---
+title: "ops/clickhouse/ohlcv_1d.sql"
+---
+
+This page is an **annotated source reference**. Code blocks are imported from the repository at build time.
+
+## What this file is
+
+`ops/clickhouse/ohlcv_1d.sql` defines the `ohlcv_1d` table used to persist daily candles.
+
+## Why this file exists
+
+Daily candles are a common aggregation level for dashboards and long-horizon analytics.
+
+## Full source
+
+```sql title="ops/clickhouse/ohlcv_1d.sql" file=<rootDir>/ops/clickhouse/ohlcv_1d.sql showLineNumbers
+```
+
+## Walkthrough (by statement)
+
+### CREATE TABLE ohlcv_1d
+
+```sql title="CREATE TABLE ohlcv_1d" file=<rootDir>/ops/clickhouse/ohlcv_1d.sql#L1-L19 showLineNumbers
+```
+
+**What:** Creates a ReplacingMergeTree table for daily candles.
+
+**How:** Uses the same candle columns and is keyed by window start timestamp.
+
+**Why:** Separating coarse-grained candles into their own table allows storing a longer history at lower cost.
+

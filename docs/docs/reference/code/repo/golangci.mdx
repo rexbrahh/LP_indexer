@@ -1,0 +1,60 @@
+---
+title: ".golangci.yml"
+---
+
+This page is an **annotated source reference**. Code blocks are imported from the repository at build time.
+
+## What this file is
+
+`.golangci.yml` configures `golangci-lint` for this repository.
+
+## Why this file exists
+
+The repo uses `golangci-lint` to enforce:
+
+- correctness checks (`govet`, `staticcheck`, `errcheck`)
+- simplifications and unused code detection (`gosimple`, `unused`)
+- formatting/import hygiene (`gofmt`, `goimports`)
+
+Keeping this in a repo-level config makes CI and local lint runs consistent.
+
+## Full source
+
+```yaml title=".golangci.yml" file=<rootDir>/.golangci.yml showLineNumbers
+```
+
+## Walkthrough
+
+### run settings
+
+```yaml title="run settings" file=<rootDir>/.golangci.yml#L1-L2 showLineNumbers
+```
+
+**What:** Sets global execution settings for `golangci-lint`.
+
+**How:** Applies a 5 minute timeout to avoid hung lint runs.
+
+**Why:** Lint should be fast and predictable; timeouts prevent CI stalls.
+
+### enabled linters
+
+```yaml title="enabled linters" file=<rootDir>/.golangci.yml#L4-L12 showLineNumbers
+```
+
+**What:** Enables the specific linters used in this repo.
+
+**How:** `enable` is an allowlist; only these linters run.
+
+**Why:** An explicit list avoids unexpected lint churn when `golangci-lint` defaults change across versions.
+
+### issues defaults
+
+```yaml title="issues defaults" file=<rootDir>/.golangci.yml#L14-L15 showLineNumbers
+```
+
+**What:** Controls default issue filtering behavior.
+
+**How:** `exclude-use-default: false` keeps the built-in default exclusions enabled.
+
+**Why:** The defaults generally reduce noise (false positives) without hiding meaningful problems.
+

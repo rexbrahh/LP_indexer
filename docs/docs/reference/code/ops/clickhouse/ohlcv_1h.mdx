@@ -1,0 +1,32 @@
+---
+title: "ops/clickhouse/ohlcv_1h.sql"
+---
+
+This page is an **annotated source reference**. Code blocks are imported from the repository at build time.
+
+## What this file is
+
+`ops/clickhouse/ohlcv_1h.sql` defines the `ohlcv_1h` table used to persist 1-hour candles.
+
+## Why this file exists
+
+Hour-level candles support long-range charting and reduce storage/query cost compared to fine-grained candles.
+
+## Full source
+
+```sql title="ops/clickhouse/ohlcv_1h.sql" file=<rootDir>/ops/clickhouse/ohlcv_1h.sql showLineNumbers
+```
+
+## Walkthrough (by statement)
+
+### CREATE TABLE ohlcv_1h
+
+```sql title="CREATE TABLE ohlcv_1h" file=<rootDir>/ops/clickhouse/ohlcv_1h.sql#L1-L19 showLineNumbers
+```
+
+**What:** Creates a ReplacingMergeTree table for 1-hour candles.
+
+**How:** Same schema pattern as other timeframe tables, partitioned by `toDate(window_start)`.
+
+**Why:** Partitioning by date keeps merges and range queries manageable for large time spans.
+

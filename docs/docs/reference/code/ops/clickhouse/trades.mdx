@@ -1,0 +1,41 @@
+---
+title: "ops/clickhouse/trades.sql"
+---
+
+This page is an **annotated source reference**. Code blocks are imported from the repository at build time.
+
+## What this file is
+
+`ops/clickhouse/trades.sql` defines the `trades` table schema used to persist decoded swap events.
+
+## Why this file exists
+
+The trades table is the sink-side “source of truth” for swap analytics. It stores:
+
+- identity and ordering information (chain, slot, tx signature, index)
+- normalized swap fields (program, pool, mints, amounts)
+- correction semantics (`provisional`, `is_undo`)
+
+## Full source
+
+```sql title="ops/clickhouse/trades.sql" file=<rootDir>/ops/clickhouse/trades.sql showLineNumbers
+```
+
+## Walkthrough (by statement)
+
+### CREATE TABLE trades
+
+```sql title="CREATE TABLE trades" file=<rootDir>/ops/clickhouse/trades.sql#L1-L25 showLineNumbers
+```
+
+**What:** Creates a MergeTree table keyed by `(chain_id, pool_id, slot, sig, idx)` and partitioned by day.
+
+**How:** Column choices mirror `dex.sol.v1.SwapEvent` fields:
+
+- `slot`/`sig`/`idx` identify an event inside a transaction.
+- amounts are stored as high-precision `Decimal(38, 0)` to handle token quantities safely.
+- `price_q32` stores fixed-point price derived from the swap.
+- flags `provisional` and `is_undo` encode finalization/correction semantics.
+
+**Why:** Using MergeTree with a stable sort key makes “latest swaps” and “by pool” queries efficient and ensures deterministic ordering for backfills and parity checks.
+

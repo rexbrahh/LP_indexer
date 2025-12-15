@@ -1,0 +1,147 @@
+---
+title: "state/candle_cpp/include/candle_worker.hpp"
+---
+
+This page is an **annotated source reference**. Code blocks are imported from the repository at build time.
+
+## What this file is
+
+`state/candle_cpp/include/candle_worker.hpp` defines the **public API and core in-memory data structures** for the candle engine:
+
+- `TradeEvent`: the input unit (normalized trade)
+- `CandleWindow`: per-pair, per-timeframe aggregation state
+- `Shard`: partitions pairs to reduce lock contention and enable parallelism
+- `CandleWorker`: the orchestrator that ingests trades, manages worker threads, finalizes candles, and emits them via a `CandlePublisher`
+
+## Why this file exists
+
+This header is effectively the “engine contract”:
+
+- upstream code needs a stable interface to submit trades (`on_trade`)
+- the engine needs a clear concurrency model (shards + queues + timing wheel)
+- the publishing boundary must be injectable (`set_publisher` / `set_jetstream_publisher`)
+
+Keeping these types in a single header makes it easier to reason about thread safety, invariants, and performance characteristics.
+
+## Full source
+
+```cpp title="state/candle_cpp/include/candle_worker.hpp" file=<rootDir>/state/candle_cpp/include/candle_worker.hpp showLineNumbers
+```
+
+## Walkthrough (by declaration)
+
+### pragma once + includes
+
+```cpp title="pragma once + includes" file=<rootDir>/state/candle_cpp/include/candle_worker.hpp#L1-L13 showLineNumbers
+```
+
+**What:** Declares the header and imports the dependencies required for concurrency and data structures.
+
+**How:** This file uses:
+
+- `atomic`, `thread`, `condition_variable` for concurrency
+- `deque` for per-shard work queues
+- `map` for pair/window state indexing
+- smart pointers for shared ownership of `CandleWindow` objects
+
+**Why:** The candle engine is stateful and multi-threaded; the header makes those requirements explicit via its includes.
+
+### Forward declarations
+
+```cpp title="Forward declarations" file=<rootDir>/state/candle_cpp/include/candle_worker.hpp#L17-L23 showLineNumbers
+```
+
+**What:** Declares types that are referenced before their full definitions.
+
+**How:** `CandleWorker` references `Shard`, `CandleWindow`, and publisher types, so forward declaring keeps compile times and header coupling lower.
+
+**Why:** In a performance-oriented module, keeping headers light reduces incremental build time and avoids include cycles.
+
+### struct TradeEvent
+
+```cpp title="struct TradeEvent" file=<rootDir>/state/candle_cpp/include/candle_worker.hpp#L24-L30 showLineNumbers
+```
+
+**What:** Represents one normalized trade update submitted to the engine.
+
+**How:** It includes:
+
+- `pair_id`: normalized identifier (e.g. `SOL/USDC`)
+- `timestamp`: UNIX time in seconds (used for bucketing)
+- `price`, `base_amount`, `quote_amount`: fixed-point `Q32.32` values
+
+**Why:** A minimal, self-contained event struct makes it cheap to enqueue and process, and it keeps the worker interface stable.
+
+### struct CandleWindow
+
+```cpp title="struct CandleWindow" file=<rootDir>/state/candle_cpp/include/candle_worker.hpp#L32-L52 showLineNumbers
+```
+
+**What:** Aggregation state for a single `(pair_id, window_size)` combination.
+
+**How:**
+
+- `candles` maps `window_start_time → Candle` so the engine can update the correct bucket quickly.
+- `mutex` protects `candles` and watermark updates.
+- `last_trade_time` acts as a watermark to support finalization decisions.
+
+Methods:
+
+- `update(...)` updates or creates the candle for a trade’s bucket.
+- `get_window_start(ts)` computes the bucket start boundary.
+- `finalize_old_candles(watermark)` returns (and typically removes) candles whose windows are closed.
+
+**Why:** Separating per-window state allows independent locking and makes it possible to finalize candles without global locks.
+
+### struct Shard
+
+```cpp title="struct Shard" file=<rootDir>/state/candle_cpp/include/candle_worker.hpp#L54-L74 showLineNumbers
+```
+
+**What:** Owns a subset of pairs and their candle windows, plus a work queue for incoming trades.
+
+**How:**
+
+- `windows` maps `pair_id → vector<CandleWindow>` (one window per timeframe).
+- `mutex` protects the `windows` map.
+- `queue` holds incoming `TradeEvent`s; it is guarded by `queue_mutex` and `queue_cv`.
+
+`get_or_create_windows` lazily initializes all supported window sizes for a pair. `process_trade` applies one trade across all windows for the pair.
+
+**Why:** Sharding is the primary concurrency strategy: it reduces contention by ensuring only one shard owns and mutates a given pair’s windows.
+
+### class CandleWorker
+
+```cpp title="class CandleWorker" file=<rootDir>/state/candle_cpp/include/candle_worker.hpp#L76-L144 showLineNumbers
+```
+
+**What:** The top-level engine object: it ingests trades, runs shard worker threads, finalizes closed windows, and emits candles.
+
+**How:** Core responsibilities:
+
+- lifecycle: `start()` spawns threads, `stop()` joins them
+- ingestion: `on_trade(...)` hashes `pair_id` to a shard and enqueues work
+- publishing: `emit_candle(...)` sends candles to the configured `CandlePublisher`
+- configuration: `set_publisher(...)` and `set_jetstream_publisher(...)` control outputs
+- introspection: `get_emitted_candles()` exposes in-memory emissions for tests
+
+Internals:
+
+- `shards_` holds shard state and per-shard queues
+- `running_` is an atomic “is the engine alive?” flag
+- `finalize_loop()` runs periodically to finalize old candles and emit them
+- `shard_loop(Shard*)` drains a shard queue and applies trades
+
+**Why:** Concentrating the concurrency model and lifecycle management in one class makes the engine embeddable and prevents thread management from spreading throughout the codebase.
+
+### namespace candle (close)
+
+```cpp title="namespace candle (close)" file=<rootDir>/state/candle_cpp/include/candle_worker.hpp#L146-L146 showLineNumbers
+```
+
+**What:** Closes the `candle` namespace.
+
+**How:** Ends the namespace scope.
+
+**Why:** Makes header structure explicit and avoids accidental symbol leakage.
+

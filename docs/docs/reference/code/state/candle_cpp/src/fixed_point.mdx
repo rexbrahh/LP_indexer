@@ -1,0 +1,139 @@
+---
+title: "state/candle_cpp/src/fixed_point.cpp"
+---
+
+This page is an **annotated source reference**. Code blocks are imported from the repository at build time.
+
+## What this file is
+
+`state/candle_cpp/src/fixed_point.cpp` implements the Q32.32 fixed-point functions declared in `include/fixed_point.hpp`.
+
+It contains:
+
+- `FixedPoint::to_string()`
+- `fp_multiply` and `fp_divide`
+- the `candle::detail` helper functions that implement 128-bit arithmetic using `(high, low)` limbs
+
+## Why this file exists
+
+The candle engine depends on deterministic arithmetic and explicit overflow behavior.
+
+Implementing these utilities in a `.cpp`:
+
+- keeps the public header smaller
+- avoids inlining large helper implementations into every translation unit
+- makes it easier to unit test and profile arithmetic hotspots
+
+## Full source
+
+```cpp title="state/candle_cpp/src/fixed_point.cpp" file=<rootDir>/state/candle_cpp/src/fixed_point.cpp showLineNumbers
+```
+
+## Walkthrough (by declaration)
+
+### includes + namespace
+
+```cpp title="includes + namespace" file=<rootDir>/state/candle_cpp/src/fixed_point.cpp#L1-L7 showLineNumbers
+```
+
+**What:** Includes the fixed-point header and standard utilities used by the implementation.
+
+**How:** `iomanip`/`sstream` format debug output; `<cmath>` is used for some conversion logic.
+
+**Why:** Formatting and helper utilities are implementation details and should not leak into the public header.
+
+### FixedPoint::to_string()
+
+```cpp title="FixedPoint::to_string()" file=<rootDir>/state/candle_cpp/src/fixed_point.cpp#L12-L16 showLineNumbers
+```
+
+**What:** Produces a human-friendly string representation of the fixed-point value.
+
+**How:** Converts to `double` and formats with a fixed number of decimal places.
+
+**Why:** This is intended for debugging/logging; core arithmetic should avoid floating-point, but display helpers are useful.
+
+### fp_multiply(...)
+
+```cpp title="fp_multiply(...)" file=<rootDir>/state/candle_cpp/src/fixed_point.cpp#L22-L36 showLineNumbers
+```
+
+**What:** Multiplies two Q32.32 values with an overflow-safe 128-bit intermediate.
+
+**How:** It:
+
+1. multiplies raw values into a `detail::Int128`
+2. shifts right by 32 bits to restore Q32.32 scaling
+3. checks the shifted value fits in `int64_t`
+4. returns a `FixedPoint` wrapping the result
+
+**Why:** Raw multiplication of two 64-bit values can overflow; the 128-bit intermediate preserves correctness and makes overflow detection explicit.
+
+### fp_divide(...)
+
+```cpp title="fp_divide(...)" file=<rootDir>/state/candle_cpp/src/fixed_point.cpp#L38-L64 showLineNumbers
+```
+
+**What:** Divides two Q32.32 values with a 128-bit intermediate for precision.
+
+**How:**
+
+- It rejects division by zero.
+- It computes `(a.raw << 32) / b.raw` by constructing a 128-bit dividend (handling negative values) and dividing by the 64-bit divisor via `detail::divide_128_by_64`.
+
+**Why:** Division is precision-sensitive; shifting the numerator preserves fractional precision while still keeping the result in Q32.32 scaling.
+
+### detail::multiply_64x64_to_128(...)
+
+```cpp title="detail::multiply_64x64_to_128(...)" file=<rootDir>/state/candle_cpp/src/fixed_point.cpp#L72-L113 showLineNumbers
+```
+
+**What:** Multiplies two signed 64-bit integers into a signed 128-bit result.
+
+**How:** It:
+
+- tracks the sign separately
+- multiplies absolute values using a 32-bit “schoolbook” split
+- recombines partial products into `(high, low)`
+- applies two’s-complement negation if needed
+
+**Why:** This is the core primitive that enables overflow-safe fixed-point multiplication without relying on compiler-specific 128-bit types.
+
+### detail::divide_128_by_64(...)
+
+```cpp title="detail::divide_128_by_64(...)" file=<rootDir>/state/candle_cpp/src/fixed_point.cpp#L115-L196 showLineNumbers
+```
+
+**What:** Divides a signed 128-bit integer by a signed 64-bit integer and returns a signed 64-bit quotient.
+
+**How:** The implementation:
+
+- handles signs and converts to absolute values
+- performs a fast path when the dividend fits in 64 bits
+- otherwise performs a simplified long-division loop that assumes the quotient fits in 64 bits
+- throws on division by zero and overflow
+
+**Why:** Fixed-point division needs precision and safety; encapsulating the complexity here keeps `fp_divide` readable and keeps error handling consistent.
+
+### detail::shift_right_128 / shift_left_128
+
+```cpp title="detail::shift_right_128 / shift_left_128" file=<rootDir>/state/candle_cpp/src/fixed_point.cpp#L198-L223 showLineNumbers
+```
+
+**What:** Shifts a 128-bit value by a small number of bits.
+
+**How:** These functions implement limb-aware shifts and validate that the shift count is within `(0, 64)`.
+
+**Why:** Shifts are used to adjust scaling (e.g. in multiplication) and to build dividends (e.g. in division). Centralizing them avoids repeated bit-twiddling logic.
+
+### detail::fits_in_int64 / to_int64
+
+```cpp title="detail::fits_in_int64 / to_int64" file=<rootDir>/state/candle_cpp/src/fixed_point.cpp#L225-L243 showLineNumbers
+```
+
+**What:** Checks whether an `Int128` value can be represented as `int64_t` and converts when safe.
+
+**How:** The fit check uses the `high` limb as a sign extension indicator (`0` for positive, `-1` for negative) and bounds checks the `low` limb.
+
+**Why:** Fixed-point operations must not silently overflow into wrong values; explicit fit checks are the correctness boundary before returning to the engine as a 64-bit value.
+

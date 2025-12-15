@@ -1,0 +1,32 @@
+---
+title: "ops/geyser_programs_demo.json"
+---
+
+This page is an **annotated source reference**. Code blocks are imported from the repository at build time.
+
+## What this file is
+
+`ops/geyser_programs_demo.json` is a small JSON mapping used for the Geyser demo configuration.
+
+## Why this file exists
+
+Demo environments benefit from a minimal set of program IDs that keep output focused while validating the ingest → decode flow.
+
+## Full source
+
+```json title="ops/geyser_programs_demo.json" file=<rootDir>/ops/geyser_programs_demo.json showLineNumbers
+```
+
+## Walkthrough (by entry)
+
+### program ID mapping
+
+```json title="program ID mapping" file=<rootDir>/ops/geyser_programs_demo.json#L1-L5 showLineNumbers
+```
+
+**What:** Maps a few DEX labels to program IDs (base58 strings).
+
+**How:** This file is typically consumed by demo tooling/config to populate allowlists.
+
+**Why:** Keeping demo inputs small and explicit makes it easier to debug issues during onboarding.
+

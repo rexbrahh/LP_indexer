@@ -1,0 +1,42 @@
+---
+title: "ops/bridge/subject_map.yaml"
+---
+
+This page is an **annotated source reference**. Code blocks are imported from the repository at build time.
+
+## What this file is
+
+`ops/bridge/subject_map.yaml` is an operator-facing mapping file used by the bridge to rewrite (or drop) subjects.
+
+## Why this file exists
+
+During cutover, downstream consumers may still subscribe to legacy subject namespaces.
+
+This mapping file allows the bridge to:
+
+- translate canonical subjects into legacy ones
+- selectively drop subjects that should not be mirrored
+
+without changing bridge code.
+
+## Full source
+
+```yaml title="ops/bridge/subject_map.yaml" file=<rootDir>/ops/bridge/subject_map.yaml showLineNumbers
+```
+
+## Walkthrough (by rule)
+
+### mappings list
+
+```yaml title="mappings list" file=<rootDir>/ops/bridge/subject_map.yaml#L1-L17 showLineNumbers
+```
+
+**What:** A list of subject prefix rewrite rules.
+
+**How:** The bridge loader (`bridge/LoadSubjectMappings`) reads this file, and the bridge compiles rules longest-prefix-first. Each entry:
+
+- rewrites `source` prefix to `target` prefix, or
+- sets `drop: true` to acknowledge but not forward matching subjects
+
+**Why:** Prefix rules are simple to reason about operationally and allow a safe, incremental cutover strategy.
+

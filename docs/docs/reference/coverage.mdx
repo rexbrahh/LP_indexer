@@ -2,11 +2,11 @@
 title: Documentation coverage
 ---
 
-This page tracks **annotated-source coverage** for the core runtime Go code and documents the conventions used to keep it maintainable.
+This page tracks **annotated-source coverage** and documents the conventions used to keep it maintainable.
 
 ## Coverage goal
 
-For each “core” Go file (see scope below), we want:
+For each “core” source file (see scope below), we want:
 
 1. A **full-source** view with line numbers.
 2. A **declaration-by-declaration walkthrough** explaining:
@@ -18,7 +18,7 @@ The code excerpts are imported at build time with `remark-code-import`, so the d
 
 ## Scope (current)
 
-The generator (`scripts/docs/generate_go_code_reference.go`) scans these directories by default:
+The Go generator (`scripts/docs/generate_go_code_reference.go`) scans these directories by default:
 
 - `cmd/`
 - `ingestor/`
@@ -35,9 +35,27 @@ Notes:
 
 ## Current status
 
-As of the current repo snapshot, all non-test Go files under the scope directories above have an annotated page under:
+As of the current repo snapshot, all non-test Go files under the default scope directories above have an annotated page under:
 
 - `docs/docs/reference/code/**`
+
+Additionally, the docs include annotated pages for:
+
+- Go tooling outside the default scope:
+  - `observability/metrics.go`
+  - `scripts/docs/generate_go_code_reference.go`
+- Protobuf schema + Buf configuration:
+  - `proto/**`
+  - `buf.gen.yaml`, `buf.work.yaml`
+- C++ candle engine:
+  - `state/candle_cpp/**` (including `tests/`)
+- Operational artifacts and scripts:
+  - `scripts/*.sh`
+  - `ops/clickhouse/*.sql`
+  - `ops/jetstream/*.json`, `ops/programs.yaml`, `ops/bridge/subject_map.yaml`
+- Repo-root build and dev configuration:
+  - `Makefile`, `docker-compose.yml`, `flake.nix`, `shell.nix`
+  - `go.mod`, `.golangci.yml`, `conductor.json`
 
 Quick sanity checks:
 
@@ -45,6 +63,15 @@ Quick sanity checks:
 rg -n "_TODO_" docs/docs/reference/code -S
 cd docs && npm run build
 ```
+
+## Audit: intentionally excluded / derived output
+
+The following paths/files are either generated or intentionally out-of-scope for “annotated source”:
+
+- `*_test.go` (excluded by default; add later if needed)
+- `gen/**` (derived output; regenerate from `proto/` instead of annotating bindings)
+- `go.sum` (derived output managed by the Go toolchain)
+- `flake.lock` (derived output managed by Nix)
 
 ## How to maintain annotated-source docs
 
@@ -56,6 +83,12 @@ When a new `.go` file lands under one of the scoped directories:
 
 ```bash
 go run ./scripts/docs/generate_go_code_reference.go
+```
+
+To generate docs for additional Go directories outside the default scope, pass them as args, for example:
+
+```bash
+go run ./scripts/docs/generate_go_code_reference.go observability scripts/docs
 ```
 
 2. Fill in:

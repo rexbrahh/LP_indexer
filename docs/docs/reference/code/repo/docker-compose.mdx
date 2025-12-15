@@ -1,0 +1,98 @@
+---
+title: "docker-compose.yml"
+---
+
+This page is an **annotated source reference**. Code blocks are imported from the repository at build time.
+
+## What this file is
+
+`docker-compose.yml` defines the local development infrastructure used by this repo:
+
+- NATS with JetStream enabled
+- ClickHouse
+- MinIO (S3-compatible storage for the Parquet sink)
+- Postgres (reserved for future/adjacent components)
+
+## Why this file exists
+
+Many components depend on external services. A compose file provides a predictable local environment and supports:
+
+- `make up` / `make down` workflows
+- reproducible E2E harness runs
+- onboarding without requiring manual service installation
+
+## Full source
+
+```yaml title="docker-compose.yml" file=<rootDir>/docker-compose.yml showLineNumbers
+```
+
+## Walkthrough (by service)
+
+### nats (JetStream)
+
+```yaml title="nats (JetStream)" file=<rootDir>/docker-compose.yml#L1-L16 showLineNumbers
+```
+
+**What:** Runs NATS with JetStream enabled and exposes client and monitoring ports on localhost.
+
+**How:**
+
+- Enables JetStream (`-js`) and configures a local storage directory.
+- Binds ports to `127.0.0.1` and allows overrides via env vars (`NATS_CLIENT_PORT`, `NATS_MONITOR_PORT`).
+- Persists state via `nats-data`.
+
+**Why:** NATS/JetStream is the backbone of the ingest → publish pipeline; local dev needs a reliable broker with durable state.
+
+### clickhouse
+
+```yaml title="clickhouse" file=<rootDir>/docker-compose.yml#L17-L34 showLineNumbers
+```
+
+**What:** Runs ClickHouse for analytical storage.
+
+**How:**
+
+- Exposes native (`9000`) and HTTP (`8123`) ports on localhost.
+- Sets `CLICKHOUSE_DB` and enables access management.
+- Raises `nofile` limits, and mounts `./ops/clickhouse` into the initdb directory so schema can bootstrap automatically.
+- Persists data and logs via named volumes.
+
+**Why:** Sinks and APIs rely on ClickHouse tables; local dev needs schema bootstrapping and persistent storage between runs.
+
+### minio
+
+```yaml title="minio" file=<rootDir>/docker-compose.yml#L35-L47 showLineNumbers
+```
+
+**What:** Runs MinIO as an S3-compatible object store.
+
+**How:**
+
+- Starts the MinIO server and exposes the API and console ports on localhost.
+- Configures default credentials via `MINIO_ROOT_USER`/`MINIO_ROOT_PASSWORD`.
+- Persists objects via the `minio-data` volume.
+
+**Why:** The Parquet sink needs an object store target during development; MinIO provides a local S3-compatible endpoint.
+
+### postgres
+
+```yaml title="postgres" file=<rootDir>/docker-compose.yml#L48-L59 showLineNumbers
+```
+
+**What:** Runs Postgres with a default database and credentials.
+
+**How:** Exposes the default Postgres port on localhost and persists the data directory via `postgres-data`.
+
+**Why:** This repo’s primary analytical store is ClickHouse, but Postgres is a common dependency for adjacent tooling and future expansion.
+
+### volumes
+
+```yaml title="volumes" file=<rootDir>/docker-compose.yml#L60-L65 showLineNumbers
+```
+
+**What:** Declares named volumes used by services above.
+
+**How:** Each volume becomes a docker-managed persisted directory.
+
+**Why:** Separating data from containers makes `make down` safe (containers can be recreated) while retaining dev data across restarts.
+

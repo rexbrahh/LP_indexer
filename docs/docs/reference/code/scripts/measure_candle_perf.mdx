@@ -1,0 +1,101 @@
+---
+title: "scripts/measure_candle_perf.sh"
+---
+
+This page is an **annotated source reference**. Code blocks are imported from the repository at build time.
+
+## What this file is
+
+`scripts/measure_candle_perf.sh` is a performance harness for the candle pipeline.
+
+It:
+
+- generates a synthetic CSV of trades
+- builds the C++ candle engine and the Go `cmd/candles` consumer/bridge
+- replays trades through the candle engine publisher (`candle_replay`)
+- measures replay time and computes throughput
+- checks how many candle rows landed in ClickHouse
+
+## Why this file exists
+
+Candles are performance-sensitive derived state. This script provides a repeatable benchmark that approximates:
+
+- “trade ingestion rate” into the candle engine
+- “end-to-end publish + consume + persist” overhead
+
+It’s also useful for quickly detecting regressions after changes to:
+
+- fixed-point math
+- shard/queue behavior
+- JetStream publishing
+
+## Full source
+
+```bash title="scripts/measure_candle_perf.sh" file=<rootDir>/scripts/measure_candle_perf.sh showLineNumbers
+```
+
+## Walkthrough (by block)
+
+### Generate synthetic CSV input
+
+```bash title="Generate synthetic CSV input" file=<rootDir>/scripts/measure_candle_perf.sh#L1-L23 showLineNumbers
+```
+
+**What:** Generates a CSV of synthetic trades with predictable timestamps and prices.
+
+**How:** Uses an inline Python script to write `pair_id,timestamp,price,base_amount,quote_amount` rows.
+
+**Why:** Synthetic input makes performance runs reproducible and avoids requiring live on-chain traffic.
+
+### ClickHouse client resolution + perf table setup
+
+```bash title="ClickHouse client resolution + perf table setup" file=<rootDir>/scripts/measure_candle_perf.sh#L25-L47 showLineNumbers
+```
+
+**What:** Ensures a ClickHouse client is available and prepares a table to receive candle rows.
+
+**How:** Falls back to `docker exec` if needed, then creates/truncates a `candles_perf` table.
+
+**Why:** The harness needs a deterministic sink target so it can validate “rows written” at the end.
+
+### Toolchain discovery + CMake configuration
+
+```bash title="Toolchain discovery + CMake configuration" file=<rootDir>/scripts/measure_candle_perf.sh#L48-L83 showLineNumbers
+```
+
+**What:** Finds Protobuf/Abseil installations (especially on macOS/Homebrew) and builds both C++ and Go components.
+
+**How:**
+
+- sets `PROTOBUF_PREFIX` and `ABSL_PREFIX` heuristically for common Homebrew locations
+- builds `state/candle_cpp` via CMake
+- builds the Go `cmd/candles` binary as `bridge-perf`
+
+**Why:** Perf testing should be low-friction; detecting common dependency locations avoids manual environment setup for many developers.
+
+### Run bridge + replay trades
+
+```bash title="Run bridge + replay trades" file=<rootDir>/scripts/measure_candle_perf.sh#L84-L113 showLineNumbers
+```
+
+**What:** Runs the Go candle consumer and replays the generated trades through the C++ publisher.
+
+**How:**
+
+- starts `bridge-perf` in the background consuming `dex.sol.candle.>` subjects and writing to ClickHouse
+- runs `candle_replay` to publish trades/candles to JetStream
+- captures timestamps to compute replay and total duration
+
+**Why:** This approximates the real architecture: C++ publishes → JetStream → Go consumes → ClickHouse persists.
+
+### Compute throughput and report results
+
+```bash title="Compute throughput and report results" file=<rootDir>/scripts/measure_candle_perf.sh#L115-L129 showLineNumbers
+```
+
+**What:** Calculates throughput and verifies how many rows were written.
+
+**How:** Uses nanosecond timestamps, converts to ms, computes trades/sec in Python, then queries ClickHouse row count.
+
+**Why:** The printed summary is the benchmark output that engineers can track over time or compare across machines.
+

@@ -1,0 +1,92 @@
+---
+title: "scripts/jetstream-validate.sh"
+---
+
+This page is an **annotated source reference**. Code blocks are imported from the repository at build time.
+
+## What this file is
+
+`scripts/jetstream-validate.sh` prints a small validation report for the JetStream stream and consumer configuration used by the pipeline.
+
+## Why this file exists
+
+Many issues during local dev and cutover are “JetStream wiring” problems:
+
+- stream doesn’t exist / wrong subjects
+- consumer misconfigured (ack policy, max ack pending, etc.)
+
+This script turns those checks into a single command and prints the critical fields for quick inspection.
+
+## Full source
+
+```bash title="scripts/jetstream-validate.sh" file=<rootDir>/scripts/jetstream-validate.sh showLineNumbers
+```
+
+## Walkthrough (by block)
+
+### Preconditions: nats CLI
+
+```bash title="Preconditions: nats CLI" file=<rootDir>/scripts/jetstream-validate.sh#L1-L14 showLineNumbers
+```
+
+**What:** Enforces that the `nats` CLI is installed.
+
+**How:** Uses `command -v nats` and prints an install hint on failure.
+
+**Why:** The rest of the script shells out to `nats stream info` / `nats consumer info`; failing fast gives a clear setup action to new engineers.
+
+### Report header
+
+```bash title="Report header" file=<rootDir>/scripts/jetstream-validate.sh#L16-L20 showLineNumbers
+```
+
+**What:** Prints a human-readable report header.
+
+**How:** Uses echo separators for readability.
+
+**Why:** This is meant for interactive use; a readable report reduces cognitive load.
+
+### Stream validation: DEX
+
+```bash title="Stream validation: DEX" file=<rootDir>/scripts/jetstream-validate.sh#L21-L44 showLineNumbers
+```
+
+**What:** Verifies the `DEX` stream exists and prints key configuration/state values.
+
+**How:** Uses `nats stream info DEX -j | jq -r ...` to extract:
+
+- retention policy
+- replicas
+- duplicate window
+- storage type
+- message counts and bytes
+
+**Why:** These fields are the most common culprits when messages aren’t retained or deduplication doesn’t behave as expected.
+
+### Consumer validation: SWAP_FIREHOSE
+
+```bash title="Consumer validation: SWAP_FIREHOSE" file=<rootDir>/scripts/jetstream-validate.sh#L46-L73 showLineNumbers
+```
+
+**What:** Verifies a swap consumer exists and prints its most important tuning parameters.
+
+**How:** Extracts:
+
+- ack policy and deliver policy
+- filter subject
+- redelivery/max deliver
+- ack pending state
+
+**Why:** Consumer configuration controls correctness (ack semantics) and performance (pending limits, redeliveries). Surfacing it makes debugging easier.
+
+### Success footer
+
+```bash title="Success footer" file=<rootDir>/scripts/jetstream-validate.sh#L75-L78 showLineNumbers
+```
+
+**What:** Prints a success summary.
+
+**How:** Echoes a final status line.
+
+**Why:** Provides a clear terminal signal that all required JetStream components were found.
+

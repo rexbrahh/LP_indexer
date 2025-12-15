@@ -1,0 +1,278 @@
+---
+title: "state/candle_cpp/src/candle_worker.cpp"
+---
+
+This page is an **annotated source reference**. Code blocks are imported from the repository at build time.
+
+## What this file is
+
+`state/candle_cpp/src/candle_worker.cpp` implements the candle engine’s core runtime:
+
+- how trades update in-memory candles (`CandleWindow::update`)
+- how candles are finalized and emitted (`finalize_loop`)
+- how shards are initialized and run concurrently (`shard_loop`)
+- how `CandleWorker` wires everything together (lifecycle, queues, publishing)
+
+## Why this file exists
+
+The candle engine’s performance and correctness live in its implementation:
+
+- correct bucketing (window boundaries)
+- correct OHLCV updates (open/high/low/close/volume/trades)
+- thread safety (per-window mutexes, per-shard queues)
+- bounded shutdown semantics (threads stop cleanly)
+
+This file makes those invariants explicit and provides the concrete implementation behind the public header API.
+
+## Full source
+
+```cpp title="state/candle_cpp/src/candle_worker.cpp" file=<rootDir>/state/candle_cpp/src/candle_worker.cpp showLineNumbers
+```
+
+## Walkthrough (by declaration)
+
+### includes + namespace
+
+```cpp title="includes + namespace" file=<rootDir>/state/candle_cpp/src/candle_worker.cpp#L1-L10 showLineNumbers
+```
+
+**What:** Includes the engine header(s) and opens the `candle` namespace.
+
+**How:** The `.cpp` depends on mutexes/condition variables (for queueing) and IO for debug printing.
+
+**Why:** The implementation needs concrete concurrency primitives; keeping them in the `.cpp` avoids exposing them more broadly than needed.
+
+### CandleWindow::update(...)
+
+```cpp title="CandleWindow::update(...)" file=<rootDir>/state/candle_cpp/src/candle_worker.cpp#L16-L64 showLineNumbers
+```
+
+**What:** Applies a single trade to the correct candle bucket for this `(pair_id, window_size)`.
+
+**How:**
+
+- Computes `window_start` by flooring the timestamp to the window size.
+- Computes `window_end = window_start + window_size`.
+- Locks the window mutex to protect `candles` and watermark state.
+- Updates `last_trade_time` (watermark) to the latest seen timestamp.
+- If the bucket doesn’t exist:
+  - creates a new provisional candle with open/high/low/close set to the trade price
+  - initializes volumes and trade count
+- If the bucket exists:
+  - updates high/low bounds
+  - sets close to the latest trade price
+  - accumulates volumes and increments trade count
+
+**Why:** This is the core OHLCV aggregation logic; correctness here determines whether downstream analytics and APIs produce trustworthy candles.
+
+### CandleWindow::get_window_start(...)
+
+```cpp title="CandleWindow::get_window_start(...)" file=<rootDir>/state/candle_cpp/src/candle_worker.cpp#L66-L69 showLineNumbers
+```
+
+**What:** Computes the start timestamp of the window that contains `timestamp`.
+
+**How:** Uses integer division: `(timestamp / window_seconds) * window_seconds`.
+
+**Why:** Using integer math ensures bucket boundaries are deterministic and avoids rounding issues from floating-point time arithmetic.
+
+### CandleWindow::finalize_old_candles(...)
+
+```cpp title="CandleWindow::finalize_old_candles(...)" file=<rootDir>/state/candle_cpp/src/candle_worker.cpp#L71-L92 showLineNumbers
+```
+
+**What:** Marks closed candles as finalized and returns them for emission.
+
+**How:**
+
+- Locks the window mutex.
+- Iterates the `candles` map.
+- For each candle:
+  - if `close_time <= watermark` and it is still provisional, flips `provisional=false`, appends to `finalized`, and erases it from the map.
+
+**Why:** Finalization is what turns “in-progress” candles into stable outputs. Erasing finalized candles prevents unbounded memory growth.
+
+### Shard::get_or_create_windows(...)
+
+```cpp title="Shard::get_or_create_windows(...)" file=<rootDir>/state/candle_cpp/src/candle_worker.cpp#L98-L128 showLineNumbers
+```
+
+**What:** Returns the set of `CandleWindow` objects for a pair, creating them if absent.
+
+**How:**
+
+- Locks the shard’s `windows` map.
+- If a pair exists, returns the stored vector.
+- Otherwise allocates one `CandleWindow` per supported `WindowSize` and stores them in the map.
+
+**Why:** Lazy initialization avoids allocating window state for pairs that never trade, and it makes the supported timeframes explicit in one place.
+
+### Shard::process_trade(...)
+
+```cpp title="Shard::process_trade(...)" file=<rootDir>/state/candle_cpp/src/candle_worker.cpp#L130-L139 showLineNumbers
+```
+
+**What:** Applies a trade to all window sizes for a pair.
+
+**How:** Fetches the pair’s window vector and calls `window->update(...)` for each configured timeframe.
+
+**Why:** Producing multiple timeframes from the same input event is a core requirement of candle engines; doing it per shard keeps pair-local state mutations localized.
+
+### CandleWorker::CandleWorker(...)
+
+```cpp title="CandleWorker::CandleWorker(...)" file=<rootDir>/state/candle_cpp/src/candle_worker.cpp#L145-L153 showLineNumbers
+```
+
+**What:** Constructs a worker with a configured shard count and a default publisher.
+
+**How:**
+
+- Validates `num_shards > 0`.
+- Installs an `InMemoryPublisher` as the default publisher.
+- Calls `init_shards()` to allocate shard state.
+
+**Why:** A usable default (in-memory publishing) makes the engine easy to test and run locally without any external infrastructure.
+
+### CandleWorker::~CandleWorker()
+
+```cpp title="CandleWorker::~CandleWorker()" file=<rootDir>/state/candle_cpp/src/candle_worker.cpp#L155-L155 showLineNumbers
+```
+
+**What:** Destructor that ensures background threads are stopped.
+
+**How:** Calls `stop()`.
+
+**Why:** Threading primitives must not outlive their owning object; stopping in the destructor prevents background threads from accessing freed memory.
+
+### CandleWorker::init_shards()
+
+```cpp title="CandleWorker::init_shards()" file=<rootDir>/state/candle_cpp/src/candle_worker.cpp#L157-L162 showLineNumbers
+```
+
+**What:** Allocates `num_shards_` shard objects.
+
+**How:** Reserves space and constructs `Shard` instances with stable IDs.
+
+**Why:** Shards are the primary concurrency partitioning mechanism; allocating them up-front avoids repeated allocations during hot-path trade ingestion.
+
+### CandleWorker::start()
+
+```cpp title="CandleWorker::start()" file=<rootDir>/state/candle_cpp/src/candle_worker.cpp#L164-L181 showLineNumbers
+```
+
+**What:** Starts the engine’s worker threads and the finalization timing loop.
+
+**How:**
+
+- Uses an atomic compare/exchange so start is idempotent.
+- Spawns one shard worker thread per shard, each running `shard_loop`.
+- Spawns a separate `finalize_thread_` that runs `finalize_loop`.
+
+**Why:** Separating “ingest/update” threads from the “finalize/emit” loop keeps the hot path responsive and makes finalization cadence independent.
+
+### CandleWorker::stop()
+
+```cpp title="CandleWorker::stop()" file=<rootDir>/state/candle_cpp/src/candle_worker.cpp#L183-L210 showLineNumbers
+```
+
+**What:** Stops all background threads and resets internal state to “not running”.
+
+**How:**
+
+- Uses atomic compare/exchange so stop is idempotent.
+- Joins the finalization thread.
+- Wakes all shard worker threads via `queue_cv.notify_all()`.
+- Joins all worker threads and clears the thread list.
+
+**Why:** Graceful shutdown is required for deterministic tests and for embedding in long-running processes that may restart/reconfigure the engine.
+
+### CandleWorker::on_trade(...)
+
+```cpp title="CandleWorker::on_trade(...)" file=<rootDir>/state/candle_cpp/src/candle_worker.cpp#L212-L228 showLineNumbers
+```
+
+**What:** Thread-safe ingestion entrypoint for a single trade event.
+
+**How:**
+
+- If the worker is not running, it drops the event (no-op).
+- Hashes `pair_id` to choose a shard.
+- Pushes a `TradeEvent` into the shard’s queue under `queue_mutex`.
+- Notifies one shard worker via `queue_cv`.
+
+**Why:** Enqueuing keeps the ingestion API fast and avoids doing heavy aggregation work on the caller’s thread.
+
+### CandleWorker::emit_candle(...)
+
+```cpp title="CandleWorker::emit_candle(...)" file=<rootDir>/state/candle_cpp/src/candle_worker.cpp#L230-L250 showLineNumbers
+```
+
+**What:** Publishes an emitted candle via the configured publisher and prints a debug line.
+
+**How:** Grabs a local copy of the shared publisher pointer and calls `publisher->publish(...)` if present. Also logs a human-readable line to stdout.
+
+**Why:** Emission is the output boundary of the engine; routing through the publisher interface keeps the engine modular and testable.
+
+### Sharding helpers
+
+```cpp title="Sharding helpers" file=<rootDir>/state/candle_cpp/src/candle_worker.cpp#L252-L264 showLineNumbers
+```
+
+**What:** Implements consistent mapping of `pair_id` to shard index.
+
+**How:**
+
+- `get_shard_for_pair` returns `hash(pair_id) % num_shards_`.
+- `hash_pair_id` implements a simple FNV-1a hash over the string bytes.
+
+**Why:** Consistent hashing ensures all events for a pair are processed by the same shard, which is key to correctness (single-writer per pair) and reduces lock contention.
+
+### Publisher configuration + test helpers
+
+```cpp title="Publisher configuration + test helpers" file=<rootDir>/state/candle_cpp/src/candle_worker.cpp#L266-L283 showLineNumbers
+```
+
+**What:** Exposes emitted candles (for tests) and allows swapping publishers at runtime.
+
+**How:**
+
+- `get_emitted_candles` returns the in-memory publisher’s snapshot when available.
+- `set_publisher` installs a provided publisher or falls back to the default.
+- `set_jetstream_publisher` constructs a `JetStreamPublisher` and installs it.
+
+**Why:** Publisher injection supports both hermetic unit tests and production publishing without branching the engine logic.
+
+### CandleWorker::finalize_loop()
+
+```cpp title="CandleWorker::finalize_loop()" file=<rootDir>/state/candle_cpp/src/candle_worker.cpp#L285-L327 showLineNumbers
+```
+
+**What:** Background loop that periodically finalizes closed candles and emits them.
+
+**How:**
+
+- Runs once per second while `running_` is true.
+- Computes a “watermark” using the current wall-clock time.
+- Iterates shards, pairs, and windows:
+  - skips windows with no trades (`last_trade_time == 0`)
+  - calls `finalize_old_candles(watermark)`
+  - emits each finalized candle via `emit_candle(...)`
+
+**Why:** Finalization must happen even when no new trades arrive; a periodic timing loop ensures windows are closed and published promptly.
+
+### CandleWorker::shard_loop(...)
+
+```cpp title="CandleWorker::shard_loop(...)" file=<rootDir>/state/candle_cpp/src/candle_worker.cpp#L329-L349 showLineNumbers
+```
+
+**What:** Worker thread loop that drains a shard’s trade queue and updates candles.
+
+**How:**
+
+- Waits on `queue_cv` until either:
+  - the engine is stopped, or
+  - there is work in the queue
+- Pops the next `TradeEvent` and calls `shard->process_trade(...)`.
+
+**Why:** This design ensures that all updates for a given pair run on a shard-owned thread, making the per-pair update order deterministic and minimizing contention.
+

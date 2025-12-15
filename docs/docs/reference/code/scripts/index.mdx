@@ -1,0 +1,30 @@
+---
+title: "scripts/"
+---
+
+This section documents the repo’s **automation and validation scripts** under `scripts/`.
+
+## What this directory is
+
+These scripts are the glue between local developer workflows and the repo’s runtime components:
+
+- applying ClickHouse schemas
+- validating JetStream streams/consumers
+- running end-to-end (E2E) harnesses for sinks and candle publishing
+- building the C++ candle engine module
+
+## How to use this section
+
+Recommended reading order:
+
+1. ClickHouse schema application: `apply_clickhouse_schema.sh`
+2. JetStream inspection: `jetstream-validate.sh`
+3. Sink E2E harness: `run_sink_e2e.sh`
+4. Candle E2E harness + perf harness: `run_candle_e2e.sh`, `measure_candle_perf.sh`
+5. Convenience checks: `check_bridge_metrics.sh`, `check_candle_parity.sh`
+
+Notes:
+
+- Most scripts assume `bash` and standard CLI tooling (`jq`, `python3`, etc.).
+- When `clickhouse-client` isn’t available, some scripts can fall back to `docker exec` into a running ClickHouse container.
+

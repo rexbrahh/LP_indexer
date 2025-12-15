@@ -1,0 +1,119 @@
+---
+title: "state/candle_cpp/include/candle_types.hpp"
+---
+
+This page is an **annotated source reference**. Code blocks are imported from the repository at build time.
+
+## What this file is
+
+`state/candle_cpp/include/candle_types.hpp` defines the **core value types** used by the C++ candle engine:
+
+- the fixed-point price/amount representation used by the engine (`FixedPrice`)
+- the supported candle window sizes (`WindowSize`)
+- the in-memory candle struct (`Candle`)
+
+## Why this file exists
+
+The candle engine’s correctness depends on having a small, stable set of shared types that are used consistently across:
+
+- aggregation (`candle_worker.*`)
+- publishing (`publisher.*`)
+- replay/test tooling
+
+Keeping the data model in one header makes it easy to reason about invariants (what a candle contains, what units each field uses) and reduces coupling.
+
+## Full source
+
+```cpp title="state/candle_cpp/include/candle_types.hpp" file=<rootDir>/state/candle_cpp/include/candle_types.hpp showLineNumbers
+```
+
+## Walkthrough (by declaration)
+
+### pragma once
+
+```cpp title="pragma once" file=<rootDir>/state/candle_cpp/include/candle_types.hpp#L1-L1 showLineNumbers
+```
+
+**What:** Ensures the header is included at most once per translation unit.
+
+**How:** The compiler treats repeated includes as no-ops after the first.
+
+**Why:** Avoids ODR/duplicate-definition issues without manual include guards.
+
+### includes
+
+```cpp title="includes" file=<rootDir>/state/candle_cpp/include/candle_types.hpp#L3-L3 showLineNumbers
+```
+
+**What:** Pulls in fixed-width integer types.
+
+**How:** `uint64_t`, `int64_t`, and `uint32_t` are used throughout the candle model.
+
+**Why:** Candle engines care about deterministic representation sizes; fixed-width types prevent platform-dependent surprises.
+
+### namespace candle (open)
+
+```cpp title="namespace candle (open)" file=<rootDir>/state/candle_cpp/include/candle_types.hpp#L5-L5 showLineNumbers
+```
+
+**What:** Declares the `candle` namespace for all candle engine symbols.
+
+**How:** All types in this module live under `candle::...`.
+
+**Why:** Namespacing keeps this engine embeddable in larger systems without symbol collisions.
+
+### using FixedPrice
+
+```cpp title="using FixedPrice" file=<rootDir>/state/candle_cpp/include/candle_types.hpp#L7-L8 showLineNumbers
+```
+
+**What:** Defines the canonical in-engine fixed-point representation type.
+
+**How:** `FixedPrice` is an alias for `int64_t` representing a `Q32.32` fixed-point number (32 integer bits, 32 fractional bits).
+
+**Why:** Fixed-point (vs floating-point) keeps price/volume calculations deterministic across platforms and avoids rounding surprises in long-running aggregation.
+
+### enum class WindowSize
+
+```cpp title="enum class WindowSize" file=<rootDir>/state/candle_cpp/include/candle_types.hpp#L10-L19 showLineNumbers
+```
+
+**What:** Enumerates the supported candle bucket sizes, expressed as seconds.
+
+**How:** Values like `MIN_1 = 60` and `HOUR_1 = 3600` allow code to compute:
+
+- window start: `(timestamp / seconds) * seconds`
+- window end: `start + seconds`
+
+**Why:** Encoding the window sizes in the type system avoids “magic numbers” and makes it explicit which granularities the engine supports.
+
+### struct Candle
+
+```cpp title="struct Candle" file=<rootDir>/state/candle_cpp/include/candle_types.hpp#L21-L37 showLineNumbers
+```
+
+**What:** In-memory representation of a single OHLCV candle for a specific time window.
+
+**How:** Fields encode:
+
+- time bounds: `open_time` (window start) and `close_time` (window end)
+- prices: `open/high/low/close` in `Q32.32`
+- volumes: `volume` (base) and `quote_volume` (quote), also in `Q32.32`
+- count: `trades`
+- lifecycle flag: `provisional` (true until finalized)
+
+The default constructor initializes numeric fields to `0` and sets `provisional=true`, matching the engine’s behavior of treating new windows as “in progress”.
+
+**Why:** Keeping a simple POD-like struct makes updates fast and makes it easy to serialize into a downstream schema (e.g. `dex.sol.v1.Candle` protobuf) at the publishing boundary.
+
+### namespace candle (close)
+
+```cpp title="namespace candle (close)" file=<rootDir>/state/candle_cpp/include/candle_types.hpp#L39-L39 showLineNumbers
+```
+
+**What:** Closes the `candle` namespace.
+
+**How:** Ends the namespace scope for the header’s declarations.
+
+**Why:** Keeps the translation unit’s namespace structure well-formed and explicit.
+

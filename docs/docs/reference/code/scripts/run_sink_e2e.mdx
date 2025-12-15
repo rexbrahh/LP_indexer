@@ -1,0 +1,139 @@
+---
+title: "scripts/run_sink_e2e.sh"
+---
+
+This page is an **annotated source reference**. Code blocks are imported from the repository at build time.
+
+## What this file is
+
+`scripts/run_sink_e2e.sh` is the repository’s sink end-to-end validation harness.
+
+It runs a deterministic loop:
+
+1. Create ClickHouse schema and reset tables.
+2. Reset an S3-compatible bucket (MinIO by default).
+3. Start ClickHouse and Parquet sinks (`cmd/sink/*`) against JetStream.
+4. Replay a fixture file of events through NATS (`cmd/tools/sinkreplay`).
+5. Validate:
+   - ClickHouse rows match the fixture (including undo/provisional semantics)
+   - Parquet objects were written and contain the expected shapes/timeframes/scopes
+
+## Why this file exists
+
+The sinks are responsible for correctness of persisted state.
+
+E2E validation catches issues that unit tests won’t:
+
+- subject naming mismatches
+- schema drift between protobuf and ClickHouse/Parquet
+- “finalization” semantics (provisional vs finalized, undo events)
+- operational wiring (NATS stream/consumer config)
+
+## Full source
+
+```bash title="scripts/run_sink_e2e.sh" file=<rootDir>/scripts/run_sink_e2e.sh showLineNumbers
+```
+
+## Walkthrough (by block)
+
+### Configuration defaults
+
+```bash title="Configuration defaults" file=<rootDir>/scripts/run_sink_e2e.sh#L1-L26 showLineNumbers
+```
+
+**What:** Defines default endpoints and table/stream names for the harness.
+
+**How:** Uses env var overrides for NATS, ClickHouse, and Parquet/S3 settings and exports AWS credential env vars for the AWS CLI.
+
+**Why:** The harness should run out-of-the-box with `make up` defaults but still be configurable for other environments.
+
+### Cleanup trap (process teardown)
+
+```bash title="Cleanup trap (process teardown)" file=<rootDir>/scripts/run_sink_e2e.sh#L27-L40 showLineNumbers
+```
+
+**What:** Defines cleanup logic to stop background sink processes.
+
+**How:** Uses a trap on `EXIT` to kill and wait for both sink PIDs if they were started.
+
+**Why:** Ensures the harness doesn’t leave orphan processes running on failure (important for CI and local dev).
+
+### ClickHouse client discovery + schema initialization
+
+```bash title="ClickHouse client discovery + schema initialization" file=<rootDir>/scripts/run_sink_e2e.sh#L41-L64 showLineNumbers
+```
+
+**What:** Finds a usable ClickHouse CLI and applies the schema.
+
+**How:**
+
+- tries `clickhouse-client`, then `clickhouse client`, then a Homebrew cask fallback
+- creates the database, drops the trades table, applies `ops/clickhouse/all.sql`, and truncates the table
+
+**Why:** E2E tests should start from a clean, known schema state to avoid false positives from leftover data.
+
+### S3 bucket + tool prerequisites
+
+```bash title="S3 bucket + tool prerequisites" file=<rootDir>/scripts/run_sink_e2e.sh#L65-L77 showLineNumbers
+```
+
+**What:** Ensures the AWS CLI and DuckDB are available and prepares the bucket.
+
+**How:** Resets the bucket (`rb --force` then `mb`), verifies `duckdb` exists.
+
+**Why:** Parquet validation relies on downloading objects and inspecting them; these tools are required dependencies of the harness.
+
+### Export env vars for sinks
+
+```bash title="Export env vars for sinks" file=<rootDir>/scripts/run_sink_e2e.sh#L78-L107 showLineNumbers
+```
+
+**What:** Sets the environment variables expected by the ClickHouse and Parquet sink binaries.
+
+**How:** Exports NATS connection details, consumer names, pull timeouts/batches, ClickHouse DSN/table names, and Parquet/S3 parameters.
+
+**Why:** This makes the harness the “source of truth” for how sinks are configured in E2E mode and prevents drifting CLI flags across processes.
+
+### Run sinks + replay fixture
+
+```bash title="Run sinks + replay fixture" file=<rootDir>/scripts/run_sink_e2e.sh#L108-L125 showLineNumbers
+```
+
+**What:** Starts both sinks, replays the fixture events, then stops the sinks.
+
+**How:** Uses `go run` to start sinks in background, sleeps for readiness, replays events via `sinkreplay`, waits, then sends SIGINT and waits for shutdown.
+
+**Why:** This approximates real deployment behavior: sinks run continuously, consumers pull from JetStream, and then exit gracefully on signal.
+
+### Validate ClickHouse rows against fixture
+
+```bash title="Validate ClickHouse rows against fixture" file=<rootDir>/scripts/run_sink_e2e.sh#L127-L179 showLineNumbers
+```
+
+**What:** Validates that ClickHouse stored swaps match the fixture semantics.
+
+**How:** It:
+
+- computes expected finalized/undo counts from the fixture JSON via `jq`
+- queries ClickHouse for finalized rows and undo rows
+- builds a canonical expected JSON representation of swaps and sorts by identity
+- queries ClickHouse swaps as `JSONEachRow`, normalizes flags, sorts, and diffs
+
+**Why:** This catches schema mapping issues and incorrect handling of provisional/finalized/undo semantics.
+
+### Validate Parquet outputs
+
+```bash title="Validate Parquet outputs" file=<rootDir>/scripts/run_sink_e2e.sh#L181-L251 showLineNumbers
+```
+
+**What:** Verifies Parquet objects were written and match expectations.
+
+**How:** The harness:
+
+- lists objects and ensures at least one exists
+- downloads objects to a temp dir
+- runs `cmd/tools/parquetinspect` to compute summary stats
+- validates row counts and required fields (timeframe/scope/window_start) and expected unique timeframes/scopes
+
+**Why:** Parquet sink correctness is easy to get subtly wrong (schema mismatches, missing partition keys). These checks provide strong end-to-end confidence.
+

@@ -1,0 +1,49 @@
+---
+title: "scripts/check_bridge_metrics.sh"
+---
+
+This page is an **annotated source reference**. Code blocks are imported from the repository at build time.
+
+## What this file is
+
+`scripts/check_bridge_metrics.sh` is a small smoke test that verifies the bridge service exposes expected Prometheus metrics.
+
+## Why this file exists
+
+During cutover, the bridge is operationally sensitive. Metrics are the primary way to confirm:
+
+- forwarding is happening
+- drops are intentional and within expectations
+- publish errors and lag are visible
+
+This script provides a quick “is metrics endpoint wired?” check.
+
+## Full source
+
+```bash title="scripts/check_bridge_metrics.sh" file=<rootDir>/scripts/check_bridge_metrics.sh showLineNumbers
+```
+
+## Walkthrough (by block)
+
+### Strict mode + metrics URL
+
+```bash title="Strict mode + metrics URL" file=<rootDir>/scripts/check_bridge_metrics.sh#L1-L6 showLineNumbers
+```
+
+**What:** Enables strict bash mode and configures the metrics endpoint URL.
+
+**How:** Uses `BRIDGE_METRICS_URL` if set, otherwise defaults to `http://127.0.0.1:9090/metrics`.
+
+**Why:** The bridge metrics server address is environment-dependent; this keeps the script flexible.
+
+### Fetch and grep for expected metrics
+
+```bash title="Fetch and grep for expected metrics" file=<rootDir>/scripts/check_bridge_metrics.sh#L6-L12 showLineNumbers
+```
+
+**What:** Fetches the metrics endpoint and asserts that bridge metrics are present.
+
+**How:** Uses `curl -sf` (silent + fail on non-200) and `grep -E` to find the `dex_bridge_*` metrics.
+
+**Why:** This catches common deployment issues (wrong bind address, missing metrics server, registry wiring problems) quickly.
+

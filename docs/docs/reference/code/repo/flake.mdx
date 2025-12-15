@@ -1,0 +1,130 @@
+---
+title: "flake.nix"
+---
+
+This page is an **annotated source reference**. Code blocks are imported from the repository at build time.
+
+## What this file is
+
+`flake.nix` defines a Nix flake that provides:
+
+- reproducible developer shells (Go, C++, and “everything”)
+- CI-style checks (Go tests with and without `-race`)
+- a small utility wrapper for running a JetStream-enabled NATS server via Nix
+
+## Why this file exists
+
+This repository has a multi-language toolchain (Go + protobuf + C++20). Using Nix:
+
+- standardizes the dev environment across machines
+- reduces setup friction for onboarding
+- makes CI checks more reproducible (pinned tool versions, isolated caches)
+
+## Full source
+
+```nix title="flake.nix" file=<rootDir>/flake.nix showLineNumbers
+```
+
+## Walkthrough (by block)
+
+### description + inputs
+
+```nix title="description + inputs" file=<rootDir>/flake.nix#L1-L8 showLineNumbers
+```
+
+**What:** Declares flake metadata and pins upstream inputs.
+
+**How:**
+
+- Uses both `nixpkgs` (stable) and `nixpkgs-unstable` (for newer Go versions).
+- Uses `flake-utils` to generate outputs per supported system.
+
+**Why:** Toolchain stability matters, but we also need recent Go; splitting stable/unstable inputs gives both.
+
+### outputs: per-system pkgs + tool lists
+
+```nix title="outputs: per-system pkgs + tool lists" file=<rootDir>/flake.nix#L10-L45 showLineNumbers
+```
+
+**What:** Defines the per-system package sets and composes a dev toolchain.
+
+**How:**
+
+- Imports `pkgs` from stable and `pkgsUnstable` from unstable.
+- Chooses Go from unstable (`go_1_24`) to match `go.mod`.
+- Builds three tool lists:
+  - `goTools` (Go + lint + buf/protoc plugins)
+  - `cxxTools` (clang/cmake/ninja/protobuf)
+  - `miscTools` (git/make/openssl/direnv/just/nats-server, with `gdb` on non-Darwin)
+
+**Why:** Keeping these lists centralized makes shells and checks consistent and easy to extend.
+
+### mkDevShell
+
+```nix title="mkDevShell" file=<rootDir>/flake.nix#L46-L57 showLineNumbers
+```
+
+**What:** Defines a helper for creating dev shells that share environment setup.
+
+**How:** Configures:
+
+- `GOFLAGS` to avoid embedding VCS metadata during builds (`-buildvcs=false`)
+- `GOPATH`, `GOCACHE` under `.cache/` inside the repo (no global pollution)
+- `PATH` so `go install` binaries are found
+- `GOTOOLCHAIN=local` to avoid implicit toolchain downloads
+
+**Why:** These settings reduce “works on my machine” issues and make dev shells deterministic.
+
+### nats-dev helper
+
+```nix title="nats-dev helper" file=<rootDir>/flake.nix#L59-L61 showLineNumbers
+```
+
+**What:** Provides a `nats-dev` wrapper that runs `nats-server -js`.
+
+**How:** Emits a small shell script binary via `writeShellScriptBin`.
+
+**Why:** This is a Nix-native convenience tool for quickly starting a JetStream server when you don’t want docker compose.
+
+### devShells (default/go/cpp/ci)
+
+```nix title="devShells (default/go/cpp/ci)" file=<rootDir>/flake.nix#L64-L96 showLineNumbers
+```
+
+**What:** Exposes multiple dev shells tuned for different workflows.
+
+**How:**
+
+- `default` includes the full toolchain and also Python with `pyyaml` (useful for config tooling).
+- `go` is a lighter-weight shell for Go-only work.
+- `cpp` focuses on C++ tooling and sets `CC`/`CXX` for clang.
+- `ci` mirrors the minimal toolset required for the Nix checks below.
+
+**Why:** Different tasks require different dependencies; multiple shells keep environments smaller and faster to enter.
+
+### packages + apps
+
+```nix title="packages + apps" file=<rootDir>/flake.nix#L98-L108 showLineNumbers
+```
+
+**What:** Exposes `nats-dev` both as a flake package and as a runnable flake app.
+
+**How:** The app wrapper points `program` at the generated `nats-dev` script.
+
+**Why:** Nix users can run `nix run .#nats-dev` without entering a shell.
+
+### checks: go-tests and go-tests-race
+
+```nix title="checks: go-tests and go-tests-race" file=<rootDir>/flake.nix#L109-L195 showLineNumbers
+```
+
+**What:** Defines Nix checks that run Go tests (with and without `-race`) in a reproducible build environment.
+
+**How:**
+
+- Uses `buildGoModule` with a pinned `vendorHash`.
+- Runs `make proto-gen` before testing so bindings are always generated from `proto/`.
+- Sets isolated HOME and Go caches inside `$TMPDIR` for hermetic test runs.
+
+**Why:** CI correctness depends on deterministic proto generation and a clean environment; these checks encode those invariants in Nix.
+

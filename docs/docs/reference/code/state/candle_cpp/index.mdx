@@ -1,0 +1,37 @@
+---
+title: "state/candle_cpp"
+---
+
+This section documents the **C++ candle engine** under `state/candle_cpp/`.
+
+## What this module is
+
+The candle engine is a C++20 module that aggregates trade events into **time-bucketed OHLCV candles** across multiple granularities.
+
+It is designed to be:
+
+- deterministic (fixed-point arithmetic)
+- high-throughput (sharding + worker threads)
+- pluggable for outputs (in-memory for tests, JetStream for publishing)
+
+## How to read the code
+
+Suggested reading order:
+
+1. Data model: `include/candle_types.hpp`
+2. Aggregation logic + concurrency: `include/candle_worker.hpp` → `src/candle_worker.cpp`
+3. Publishing abstraction: `include/publisher.hpp` → `src/publisher.cpp`
+4. Fixed-point math (used for prices/amounts): `include/fixed_point.hpp` → `src/fixed_point.cpp`
+5. Replay tool for local testing: `tools/candle_replay.cpp`
+6. Build wiring (dependencies + targets): `CMakeLists.txt`
+7. Behavior and invariants (tests): `tests/fixed_point_test.cpp`, `tests/publisher_dispatch_test.cpp`, `tests/candle_finalize_test.cpp`
+
+## Relationship to the Protobuf schema
+
+When publishing to NATS/JetStream, this module serializes candles using the canonical Protobuf type:
+
+- `proto/dex/sol/v1/core.proto` (`message Candle`)
+
+Generated bindings used by this module live under:
+
+- `gen/cpp/dex/sol/v1/core.pb.*` (derived output; do not edit by hand)

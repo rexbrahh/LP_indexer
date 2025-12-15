@@ -1,0 +1,128 @@
+---
+title: "state/candle_cpp/include/fixed_point.hpp"
+---
+
+This page is an **annotated source reference**. Code blocks are imported from the repository at build time.
+
+## What this file is
+
+`state/candle_cpp/include/fixed_point.hpp` defines the candle engine’s **Q32.32 fixed-point arithmetic** utilities.
+
+It provides:
+
+- `FixedPoint`: a small wrapper around an `int64_t` raw value
+- safe multiply/divide helpers (`fp_multiply`, `fp_divide`) that use 128-bit intermediates
+- internal helpers in `candle::detail` to emulate 128-bit operations in a portable way
+
+## Why this file exists
+
+Candles are derived state: small numeric errors compound over time and are hard to debug.
+
+Using fixed-point math (instead of `double`) gives:
+
+- determinism across machines and compilers
+- explicit overflow behavior (throw on overflow)
+- predictable rounding/truncation behavior
+
+This is especially important for price/volume calculations and for producing reproducible backfills.
+
+## Full source
+
+```cpp title="state/candle_cpp/include/fixed_point.hpp" file=<rootDir>/state/candle_cpp/include/fixed_point.hpp showLineNumbers
+```
+
+## Walkthrough (by declaration)
+
+### pragma once + includes
+
+```cpp title="pragma once + includes" file=<rootDir>/state/candle_cpp/include/fixed_point.hpp#L1-L6 showLineNumbers
+```
+
+**What:** Declares the header and imports types/exceptions used by the fixed-point implementation.
+
+**How:** `stdexcept` is used for error signaling (`overflow_error`, `domain_error`); `string` is used for debug conversion.
+
+**Why:** Fixed-point math should fail loudly on invalid operations (overflow/div-by-zero) so upstream components can handle correctness boundaries explicitly.
+
+### namespace candle + fixed-point constants
+
+```cpp title="namespace candle + fixed-point constants" file=<rootDir>/state/candle_cpp/include/fixed_point.hpp#L7-L21 showLineNumbers
+```
+
+**What:** Establishes the `candle` namespace and defines constants describing the Q32.32 format.
+
+**How:**
+
+- `FRACTIONAL_BITS = 32` means the lower 32 bits represent the fractional part.
+- `FIXED_ONE = 1 << 32` is the raw representation of `1.0`.
+
+**Why:** These constants are shared by conversions and multiplication/division logic; keeping them constexpr makes them compile-time and self-documenting.
+
+### class FixedPoint
+
+```cpp title="class FixedPoint" file=<rootDir>/state/candle_cpp/include/fixed_point.hpp#L22-L101 showLineNumbers
+```
+
+**What:** A light wrapper around an `int64_t` that represents a Q32.32 number.
+
+**How:** Key parts:
+
+- Construction:
+  - default ctor creates `0`
+  - `explicit FixedPoint(int64_t raw)` wraps a raw value
+  - `from_int` shifts an integer by 32 to place it in the integer part
+  - `from_double` multiplies by `2^32` and casts (convenient, but lossy)
+- Conversion/access:
+  - `raw()` returns the underlying integer representation
+  - `to_int()` truncates the fractional bits
+  - `to_double()` returns a floating-point view for debugging/display
+  - `to_string()` is a human-readable string form (defined in the `.cpp`)
+- Arithmetic:
+  - `operator+`, `operator-` operate directly on raw values
+  - multiplication/division are intentionally not operators here; instead the API exposes `fp_multiply`/`fp_divide` which perform overflow-safe 128-bit intermediates
+- Comparisons:
+  - comparison operators compare raw values directly (same scaling)
+
+**Why:** Wrapping the raw value provides a single place to encode format semantics and makes it harder for callers to accidentally mix fixed-point and integer values.
+
+### fp_multiply / fp_divide (declarations)
+
+```cpp title="fp_multiply / fp_divide (declarations)" file=<rootDir>/state/candle_cpp/include/fixed_point.hpp#L103-L125 showLineNumbers
+```
+
+**What:** Declares safe multiply/divide helpers for Q32.32 values.
+
+**How:**
+
+- `fp_multiply(a, b)` computes `(a.raw * b.raw) >> 32` using a 128-bit intermediate and throws on overflow.
+- `fp_divide(a, b)` computes `(a.raw << 32) / b.raw` using a 128-bit intermediate and throws on division by zero or overflow.
+
+**Why:** Multiplication/division are where overflow and precision loss are most likely; concentrating safety logic here keeps call sites simple and correct.
+
+### detail::Int128
+
+```cpp title="detail::Int128" file=<rootDir>/state/candle_cpp/include/fixed_point.hpp#L130-L139 showLineNumbers
+```
+
+**What:** Internal representation of a signed 128-bit integer using `(high, low)` limbs.
+
+**How:** `high` stores the upper signed 64 bits; `low` stores the lower unsigned 64 bits.
+
+**Why:** Not all toolchains expose a portable built-in `__int128` type. This struct provides a controlled representation for intermediate arithmetic.
+
+### detail helpers (declarations)
+
+```cpp title="detail helpers (declarations)" file=<rootDir>/state/candle_cpp/include/fixed_point.hpp#L141-L160 showLineNumbers
+```
+
+**What:** Declares the helper operations needed to implement safe multiply/divide in terms of `Int128`.
+
+**How:** Functions include:
+
+- multiply two 64-bit values into 128 bits
+- shift left/right a 128-bit value
+- divide a 128-bit value by a 64-bit divisor
+- fit checks and conversion back to `int64_t`
+
+**Why:** Keeping these in a `detail` namespace communicates “not public API” while making the fixed-point implementation testable and readable.
+

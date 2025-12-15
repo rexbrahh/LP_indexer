@@ -1,0 +1,44 @@
+---
+title: "ops/jetstream/streams.dex.json"
+---
+
+This page is an **annotated source reference**. Code blocks are imported from the repository at build time.
+
+## What this file is
+
+`ops/jetstream/streams.dex.json` defines the canonical JetStream stream for the pipeline (`DEX`).
+
+## Why this file exists
+
+Streams define the persistence and routing surface of JetStream:
+
+- which subjects are retained
+- how long deduplication windows last
+- storage and retention behaviors
+
+Keeping the stream definition in version control makes the messaging contract explicit and reproducible.
+
+## Full source
+
+```json title="ops/jetstream/streams.dex.json" file=<rootDir>/ops/jetstream/streams.dex.json showLineNumbers
+```
+
+## Walkthrough (by field)
+
+### stream config object
+
+```json title="stream config object" file=<rootDir>/ops/jetstream/streams.dex.json#L1-L26 showLineNumbers
+```
+
+**What:** Declares the `DEX` stream and its configuration, including the subject allowlist.
+
+**How:**
+
+- `name`/`description` define the stream identity.
+- `subjects` enumerates canonical subjects (`dex.sol.*`) retained by this stream.
+- `retention`, `storage`, and `discard` control how messages are stored and evicted.
+- `num_replicas` configures replication.
+- `duplicate_window` defines the message deduplication window (used with Msg-Id).
+
+**Why:** A single canonical stream definition is the foundation of the ingest → decode → publish pipeline; it must be stable for consumers and sinks to work reliably.
+

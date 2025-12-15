@@ -1,0 +1,44 @@
+---
+title: "ops/jetstream/consumer.swaps.json"
+---
+
+This page is an **annotated source reference**. Code blocks are imported from the repository at build time.
+
+## What this file is
+
+`ops/jetstream/consumer.swaps.json` defines a JetStream consumer configuration for swap events.
+
+## Why this file exists
+
+Consumers are where correctness and throughput meet:
+
+- ack policy controls at-least-once vs at-most-once semantics
+- max ack pending controls memory/backpressure
+- deliver policy controls whether replays happen
+
+Having a canonical consumer config makes it easier to bootstrap and validate environments.
+
+## Full source
+
+```json title="ops/jetstream/consumer.swaps.json" file=<rootDir>/ops/jetstream/consumer.swaps.json showLineNumbers
+```
+
+## Walkthrough (by field)
+
+### consumer config object
+
+```json title="consumer config object" file=<rootDir>/ops/jetstream/consumer.swaps.json#L1-L11 showLineNumbers
+```
+
+**What:** Declares a consumer (`SWAP_FIREHOSE`) on the `DEX` stream filtered to swap subjects.
+
+**How:** Key fields:
+
+- `filter_subject`: `dex.sol.*.swap` (subscribe only to swap events)
+- `ack_policy`: `explicit` (consumer must ack)
+- `deliver_policy`: `new` (start at new messages)
+- `max_ack_pending`: prevents too many in-flight messages
+- `max_deliver`: bounds redelivery attempts
+
+**Why:** Swap events are high volume; these settings tune consumer behavior for throughput while preserving explicit ack semantics.
+
