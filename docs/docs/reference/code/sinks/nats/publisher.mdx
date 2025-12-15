@@ -26,6 +26,13 @@ Publishing to JetStream has a few recurring requirements:
 
 Centralizing these rules reduces duplicated “publish boilerplate” across ingestors/tools and makes correctness constraints reviewable in one place.
 
+## TL;DR
+
+- **Purpose:** Publish canonical protobuf events to JetStream with stable subject conventions and dedupe headers.
+- **Subjects:** e.g. `dex.sol.<program>.swap`, `dex.sol.blocks.head`, `dex.sol.candle.<scope>.<timeframe>`.
+- **Deduping:** sets `Nats-Msg-Id` to support replay/backfill without duplicates (within `duplicate_window`).
+- **Main risk area:** message-id and subject conventions are part of the pipeline contract; changes here ripple to sinks and schema consumers.
+
 ## Full source
 
 ```go title="sinks/nats/publisher.go" file=<rootDir>/sinks/nats/publisher.go showLineNumbers

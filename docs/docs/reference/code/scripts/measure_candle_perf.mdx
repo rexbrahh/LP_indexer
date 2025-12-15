@@ -11,7 +11,7 @@ This page is an **annotated source reference**. Code blocks are imported from th
 It:
 
 - generates a synthetic CSV of trades
-- builds the C++ candle engine and the Go `cmd/candles` consumer/bridge
+- builds the C++ candle engine and the Go `cmd/candles` consumer/materializer
 - replays trades through the candle engine publisher (`candle_replay`)
 - measures replay time and computes throughput
 - checks how many candle rows landed in ClickHouse
@@ -69,16 +69,16 @@ It’s also useful for quickly detecting regressions after changes to:
 
 - sets `PROTOBUF_PREFIX` and `ABSL_PREFIX` heuristically for common Homebrew locations
 - builds `state/candle_cpp` via CMake
-- builds the Go `cmd/candles` binary as `bridge-perf`
+- builds the Go `cmd/candles` binary as `bridge-perf` (a perf-focused materializer binary name used only by this harness)
 
 **Why:** Perf testing should be low-friction; detecting common dependency locations avoids manual environment setup for many developers.
 
-### Run bridge + replay trades
+### Run materializer + replay trades
 
-```bash title="Run bridge + replay trades" file=<rootDir>/scripts/measure_candle_perf.sh#L84-L113 showLineNumbers
+```bash title="Run materializer + replay trades" file=<rootDir>/scripts/measure_candle_perf.sh#L84-L113 showLineNumbers
 ```
 
-**What:** Runs the Go candle consumer and replays the generated trades through the C++ publisher.
+**What:** Runs the Go candle materializer and replays the generated trades through the C++ publisher.
 
 **How:**
 
@@ -98,4 +98,3 @@ It’s also useful for quickly detecting regressions after changes to:
 **How:** Uses nanosecond timestamps, converts to ms, computes trades/sec in Python, then queries ClickHouse row count.
 
 **Why:** The printed summary is the benchmark output that engineers can track over time or compare across machines.
-

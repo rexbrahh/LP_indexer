@@ -22,7 +22,7 @@ Full schema walkthrough: [`ops/clickhouse/all.sql`](../reference/code/ops/clickh
 ### Current implementation note
 
 - The ClickHouse sink service currently materializes swap/trade events into the `trades` table.
-- Candle materialization is currently handled by the separate [`cmd/candles`](../reference/code/cmd/candles/main) bridge (table name defaults to `candles`), while the `ohlcv_*` schemas in `ops/clickhouse/` represent the target analytics schema family.
+- Candle materialization is currently handled by the separate [`cmd/candles`](../reference/code/cmd/candles/main) materializer process (table name defaults to `candles`), while the `ohlcv_*` schemas in `ops/clickhouse/` represent the target analytics schema family.
 
 ## Parquet
 

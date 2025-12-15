@@ -8,10 +8,55 @@ This repo’s docs site lives under `docs/` and is configured for GitHub Pages:
 
 - `docs/docusaurus.config.ts` – `url` + `baseUrl`
 - `npm run build` outputs `docs/build/`
+- GitHub Pages deploy workflow: `.github/workflows/docs.yml` (push to `main` triggers build + deploy)
 
 ## Runtime services
 
-Deployment for runtime services is environment-specific. See `docs-archive/CICD_AND_DEPLOYMENT.md` for current runbooks until the new docs set is fully migrated.
+Runtime deployment is environment-specific, but the repo has a consistent “minimum viable” shape:
+
+### 1) Provision dependencies
+
+Required:
+
+- NATS with JetStream enabled
+- ClickHouse
+
+Optional (depending on which components you run):
+
+- Redis (API cache)
+- S3-compatible object storage (Parquet sink)
+
+### 2) Apply schemas and bootstrap JetStream
+
+Use the version-controlled configs as the source of truth:
+
+- ClickHouse schema: [`ops/clickhouse/all.sql`](../reference/code/ops/clickhouse/all)
+- JetStream stream/consumer definitions:
+  - [`ops/jetstream/streams.dex.json`](../reference/code/ops/jetstream/streams.dex)
+  - [`ops/jetstream/consumer.swaps.json`](../reference/code/ops/jetstream/consumer.swaps)
+
+For local and CI-like environments, the Makefile provides idempotent bootstraps you can mirror in production automation:
+
+```bash
+make ops.clickhouse.apply
+make ops.jetstream.init
+make ops.jetstream.verify
+```
+
+### 3) Run services (process roster)
+
+Common processes:
+
+- Ingestor (event source): [`cmd/ingestor/geyser/main.go`](../reference/code/cmd/ingestor/geyser/main)
+- Sinks (persistence):
+  - [`cmd/sink/clickhouse/main.go`](../reference/code/cmd/sink/clickhouse/main)
+  - [`cmd/sink/parquet/main.go`](../reference/code/cmd/sink/parquet/main)
+- Candle materializer (only if you publish candles and want them persisted): [`cmd/candles/main.go`](../reference/code/cmd/candles/main)
+- API server: [`api/http/main.go`](../reference/code/api/http/main)
+
+Configuration is sourced from environment variables and is documented at:
+
+- [Environment variables](../reference/env)
 
 ## See also
 

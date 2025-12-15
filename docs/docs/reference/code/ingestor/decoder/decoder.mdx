@@ -30,6 +30,13 @@ This decoder exists to:
 - attach consistent fields (chain ID, slot, signature, amounts, fees)
 - share state across streams (slot timestamps, pool config/fees) so decoded events are higher quality
 
+## TL;DR
+
+- **Purpose:** Turn “raw Solana updates” into canonical `dexv1.SwapEvent` records.
+- **Inputs you must feed it for best results:** `HandleBlockMeta` (slot→timestamp), `HandleAccount` (pool metadata), then `DecodeTransaction`.
+- **Main risk area:** decoding quality depends on pool metadata and timestamp availability; missing cache entries generally yields partial/less precise events rather than hard failures.
+- **Where it fits:** this is the normalization boundary between ingestion transports (Geyser/Helius) and JetStream publishing / sinks.
+
 ## Full source
 
 ```go title="ingestor/decoder/decoder.go" file=<rootDir>/ingestor/decoder/decoder.go showLineNumbers

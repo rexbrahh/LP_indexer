@@ -30,6 +30,13 @@ Keeping this logic in one writer:
 - makes insert behavior consistent across services/tools
 - provides a single place to update when storage schema changes
 
+## TL;DR
+
+- **Purpose:** Efficiently insert `Trade` and `Candle` rows into ClickHouse via native protocol (`ch-go`) using columnar batching.
+- **Primary knobs:** `BatchSize` and `FlushInterval` (service-level), plus DSN/table names.
+- **Main risk area:** schema drift—this writer’s column mapping must stay aligned with `ops/clickhouse/*.sql`.
+- **Candle note:** the `Candle` row type used by `cmd/candles` is not the same as the `ohlcv_*` analytics schema family; verify table compatibility in your deployment.
+
 ## Full source
 
 ```go title="sinks/clickhouse/writer.go" file=<rootDir>/sinks/clickhouse/writer.go showLineNumbers

@@ -11,9 +11,9 @@ This page is an **annotated source reference**. Code blocks are imported from th
 It:
 
 - builds the C++ candle engine (`state/candle_cpp`)
-- starts the Go candle bridge (`cmd/candles`) to read candle subjects and write to ClickHouse
+- starts the Go candle materializer (`cmd/candles`) to read candle subjects and write to ClickHouse
 - replays a CSV of trade events using `candle_replay`
-- stops the bridge and prints how many candle rows were inserted
+- stops the materializer and prints how many candle rows were inserted
 
 ## Why this file exists
 
@@ -21,7 +21,7 @@ Candles cross language and process boundaries:
 
 - C++ engine aggregates and publishes candles
 - JetStream transports them
-- Go “bridge” consumes and writes to sinks
+- Go materializer consumes and writes to sinks
 
 This script validates that the whole chain works in a local environment.
 
@@ -72,18 +72,18 @@ This script validates that the whole chain works in a local environment.
 
 **Why:** Ensures the sink target is clean so the final count reflects only the current run.
 
-### Run Go candle bridge + replay trades
+### Run Go candle materializer + replay trades
 
-```bash title="Run Go candle bridge + replay trades" file=<rootDir>/scripts/run_candle_e2e.sh#L90-L112 showLineNumbers
+```bash title="Run Go candle materializer + replay trades" file=<rootDir>/scripts/run_candle_e2e.sh#L90-L112 showLineNumbers
 ```
 
-**What:** Starts the Go bridge and replays trades through the C++ engine publisher.
+**What:** Starts the Go materializer and replays trades through the C++ engine publisher.
 
 **How:**
 
 - Runs `go run ./cmd/candles` in the background consuming `${SUBJECT_ROOT}.candle.>`
 - Uses `timeout` to bound the replay run
-- Stops the bridge after a short settle period
+- Stops the materializer after a short settle period
 
 **Why:** This exercises the cross-process boundary (JetStream) and validates that the Go consumer can persist candle messages.
 

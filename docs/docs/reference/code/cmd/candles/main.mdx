@@ -6,7 +6,7 @@ This page is an **annotated source reference**. Code blocks are imported from th
 
 ## What this file is
 
-`cmd/candles/main.go` is a long-running **candle bridge** process:
+`cmd/candles/main.go` is a long-running **candle materializer** process:
 
 - consumes protobuf `dexv1.Candle` messages from NATS JetStream
 - writes them into ClickHouse candle tables (via `sinks/clickhouse`)
@@ -14,7 +14,9 @@ This page is an **annotated source reference**. Code blocks are imported from th
 
 It is effectively a specialized sink focused on candle subjects (`dex.sol.candle.>` by default).
 
-Note: the ClickHouse destination table is configured via `CLICKHOUSE_CANDLES_TABLE` / `--clickhouse-candles` (default `"candles"`). The `ops/clickhouse/ohlcv_*` schemas are a separate (more canonical) candle schema family; this bridge currently writes the simplified `sinks/clickhouse.Candle` row type.
+This is distinct from the **legacy compatibility bridge** service (`cmd/bridge`): that service is about subject/schema mapping for downstream compatibility, while this process is about persisting canonical candle events into storage.
+
+Note: the ClickHouse destination table is configured via `CLICKHOUSE_CANDLES_TABLE` / `--clickhouse-candles` (default `"candles"`). The `ops/clickhouse/ohlcv_*` schemas are a separate (more canonical) candle schema family; this materializer currently writes the simplified `sinks/clickhouse.Candle` row type.
 
 ## Why this file exists
 
@@ -68,7 +70,7 @@ In other words, this is a “materializer” for the candle stream; it is intent
 - `sinks/clickhouse` and `sinks/parquet` implement the actual persistence writers.
 - `dexv1` contains the generated protobuf candle type.
 
-**Why:** The bridge’s job is glue: read from JetStream, decode protobuf, translate to sink row formats, write and ACK.
+**Why:** The materializer’s job is glue: read from JetStream, decode protobuf, translate to sink row formats, write and ACK.
 
 ### func main()
 
@@ -77,7 +79,7 @@ In other words, this is a “materializer” for the candle stream; it is intent
 ```go title="func main()" file=<rootDir>/cmd/candles/main.go#L23-L143 showLineNumbers
 ```
 
-**What:** Configures and runs the candle bridge until shutdown.
+**What:** Configures and runs the candle materializer until shutdown.
 
 **How:** The implementation is a classic pull-consumer loop:
 
@@ -190,7 +192,7 @@ This is an explicit “at-least-once” contract: the sink must be idempotent or
 - decodes Q32 prices into `float64` for ClickHouse float columns
 - computes a “volume” from `vol_quote` (a protobuf `U128`)
 
-**Why:** The canonical event stream remains integer-based for determinism; this bridge converts into the numeric types expected by the current ClickHouse candle writer.
+**Why:** The canonical event stream remains integer-based for determinism; this materializer converts into the numeric types expected by the current ClickHouse candle writer.
 
 ### func priceFromQ32(val int64) float64
 
@@ -216,7 +218,7 @@ This is an explicit “at-least-once” contract: the sink must be idempotent or
 
 **How:** `hi` is shifted by 64 bits (via `math.Ldexp`) and added to `lo`. Nil is treated as zero.
 
-**Why:** The Parquet/ClickHouse “canonical” candle schemas represent volumes as integers/decimals for exactness; this bridge converts into the float-based row type used by `sinks/clickhouse.Candle`.
+**Why:** The Parquet/ClickHouse “canonical” candle schemas represent volumes as integers/decimals for exactness; this materializer converts into the float-based row type used by `sinks/clickhouse.Candle`.
 
 ### func envOr(key, fallback string) string
 

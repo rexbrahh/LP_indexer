@@ -1,0 +1,73 @@
+---
+title: Candle pipeline (OHLCV)
+---
+
+This page describes how **candles** (OHLCV aggregates) are represented, transported, produced, and persisted in this repository.
+
+## Canonical schema (source of truth)
+
+Candles are defined in the Protobuf schema:
+
+- [`proto/dex/sol/v1/core.proto`](../reference/code/proto/dex/sol/v1/core)
+  - `message Candle` is the canonical wire contract.
+
+## JetStream subjects (transport)
+
+Candles are published to subjects under the canonical subject root (default `dex.sol`):
+
+```text
+dex.sol.candle.<scope>.<timeframe>
+```
+
+Where:
+
+- `<scope>` is `pair` or `pool`
+- `<timeframe>` is a string like `1s`, `1m`, `5m`, etc.
+
+See:
+
+- Publisher implementation: [`sinks/nats/publisher.go`](../reference/code/sinks/nats/publisher) (`PublishCandle`)
+- Stream config: [`ops/jetstream/streams.dex.json`](../reference/code/ops/jetstream/streams.dex)
+
+## Producers (aggregation)
+
+The repository includes a C++ candle engine (`state/candle_cpp`) that aggregates trades into time-bucketed OHLCV candles.
+
+In the current repo snapshot, candle production is exercised primarily via tooling/harnesses:
+
+- Engine module: [`state/candle_cpp/`](../reference/code/state/candle_cpp)
+- Replay tool: [`state/candle_cpp/tools/candle_replay.cpp`](../reference/code/state/candle_cpp/tools/candle_replay)
+- E2E harness: [`scripts/run_candle_e2e.sh`](../reference/code/scripts/run_candle_e2e)
+- Perf harness: [`scripts/measure_candle_perf.sh`](../reference/code/scripts/measure_candle_perf)
+
+## Consumers / materializers (persistence)
+
+The Go materializer `cmd/candles` consumes `dexv1.Candle` messages from JetStream and persists them:
+
+- ClickHouse (required)
+- Parquet/S3 (optional)
+
+See:
+
+- Materializer: [`cmd/candles/main.go`](../reference/code/cmd/candles/main)
+- ClickHouse writer: [`sinks/clickhouse/writer.go`](../reference/code/sinks/clickhouse/writer)
+- Parquet writer: [`sinks/parquet/writer.go`](../reference/code/sinks/parquet/writer)
+
+## Storage schema notes
+
+ClickHouse schemas are version-controlled under `ops/clickhouse/`.
+
+- Full schema entrypoint: [`ops/clickhouse/all.sql`](../reference/code/ops/clickhouse/all)
+- Timeframe tables: `ohlcv_1s`, `ohlcv_1m`, `ohlcv_5m`, `ohlcv_1h`, `ohlcv_1d`
+
+The current materializer defaults to writing into a `candles` table (configured via `CLICKHOUSE_CANDLES_TABLE`). The `ohlcv_*` tables represent the intended analytics schema family and may require alignment depending on deployment.
+
+## How to validate locally
+
+- Start infra: [Ops: local dev](../ops/local-dev)
+- Run candle E2E: `make candle-e2e`
+
+Source:
+
+- [`scripts/run_candle_e2e.sh`](../reference/code/scripts/run_candle_e2e)
+

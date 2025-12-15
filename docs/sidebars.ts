@@ -26,6 +26,7 @@ const sidebars: SidebarsConfig = {
         'architecture/events',
         'architecture/nats',
         'architecture/storage',
+        'architecture/candles',
       ],
     },
     {

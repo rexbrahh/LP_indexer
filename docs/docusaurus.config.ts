@@ -70,6 +70,16 @@ const config: Config = {
     ],
   ],
 
+  themes: [
+    [
+      '@easyops-cn/docusaurus-search-local',
+      {
+        hashed: true,
+        language: ['en'],
+      },
+    ],
+  ],
+
   themeConfig: {
     // Replace with your project's social card
     image: 'img/docusaurus-social-card.jpg',
@@ -88,6 +98,10 @@ const config: Config = {
           sidebarId: 'mainSidebar',
           position: 'left',
           label: 'Docs',
+        },
+        {
+          type: 'search',
+          position: 'right',
         },
         {
           href: 'https://github.com/rexbrahh/LP_indexer',
