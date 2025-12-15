@@ -1,0 +1,21 @@
+---
+title: "ingestor/"
+---
+
+`ingestor/` implements **chain data ingestion** and prepares decoder inputs / canonical events for publishing.
+
+## Suggested reading order
+
+1. [`ingestor/geyser/service.go`](./geyser/service)
+2. [`ingestor/geyser/processor.go`](./geyser/processor)
+3. [`ingestor/geyser/client.go`](./geyser/client)
+4. [`ingestor/decoder/decoder.go`](./decoder/) (bridge between raw updates and DEX decoders)
+5. [`ingestor/common/txmeta.go`](./common/txmeta) and [`ingestor/common/slot_cache.go`](./common/slot_cache)
+6. Optional fallback: [`ingestor/helius/client.go`](./helius/client) + [`ingestor/geyser/failover_service.go`](./geyser/failover_service)
+
+## Related docs
+
+- [Service: ingestor](../../../services/ingestor)
+- [Pipeline architecture](../../../architecture/pipeline)
+- [NATS / JetStream design](../../../architecture/nats)
+- [Canonical event model](../../../architecture/events)

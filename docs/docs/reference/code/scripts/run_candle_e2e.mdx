@@ -25,6 +25,13 @@ Candles cross language and process boundaries:
 
 This script validates that the whole chain works in a local environment.
 
+## Related docs
+
+- Guides: [Quickstart (local dev)](../../../start-here/quickstart) and [Ops: local dev](../../../ops/local-dev)
+- Architecture: [Canonical event model](../../../architecture/events) and [NATS / JetStream design](../../../architecture/nats)
+- Engine + tools: [`state/candle_cpp/`](../state/candle_cpp) and [`state/candle_cpp/tools/candle_replay.cpp`](../state/candle_cpp/tools/candle_replay)
+- Materializer: [`cmd/candles/main.go`](../cmd/candles/main)
+
 ## Full source
 
 ```bash title="scripts/run_candle_e2e.sh" file=<rootDir>/scripts/run_candle_e2e.sh showLineNumbers
@@ -90,4 +97,3 @@ This script validates that the whole chain works in a local environment.
 **How:** Queries ClickHouse for candle row count; when AWS CLI + Parquet env vars are present, lists objects from the bucket.
 
 **Why:** These outputs provide immediate validation signals without requiring manual ClickHouse/S3 inspection.
-

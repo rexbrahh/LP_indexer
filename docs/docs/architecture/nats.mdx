@@ -31,7 +31,12 @@ make ops.jetstream.init
 make ops.jetstream.verify
 ```
 
-Configs live in `ops/jetstream/`.
+Configs live in `ops/jetstream/`:
+
+- [`ops/jetstream/streams.dex.json`](../reference/code/ops/jetstream/streams.dex)
+- [`ops/jetstream/consumer.swaps.json`](../reference/code/ops/jetstream/consumer.swaps)
+
+Operational guide: [Ops: NATS / JetStream operations](../ops/nats-jetstream)
 
 ### Default consumer configuration
 
@@ -45,3 +50,10 @@ Key fields:
 - `filter_subject`: binds the consumer to swap subjects only (by default `dex.sol.*.swap`).
 - `ack_policy`: explicit ack so sinks can control at-least-once behavior.
 - `deliver_policy`: `new` by default for “only start from now” (backfills typically override this).
+
+## See also
+
+- [Canonical event model](./events)
+- [Pipeline architecture](./pipeline)
+- [Service: sinks](../services/sinks)
+- [`sinks/nats/publisher.go`](../reference/code/sinks/nats/publisher)

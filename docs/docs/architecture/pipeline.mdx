@@ -8,13 +8,15 @@ This page describes how data moves through the system from ingestion to serving.
 
 Ingestors connect to chain data sources (e.g., Geyser), filter relevant programs/accounts, and emit raw updates.
 
-Entry points live under `cmd/ingestor/*`.
+Entry points live under [`cmd/ingestor/*`](../reference/code/cmd). Start with:
+
+- [`cmd/ingestor/geyser/main.go`](../reference/code/cmd/ingestor/geyser/main)
 
 ## 2) Decode
 
 Decoders translate program-specific data (instruction bytes, account state) into canonical events.
 
-Decoder implementations live under `decoder/`.
+Decoder implementations live under [`decoder/`](../reference/code/decoder).
 
 ## 3) Publish
 
@@ -22,14 +24,24 @@ Canonical events are published to JetStream subjects under a common subject root
 
 Message IDs should be deterministic so consumers can dedupe when replaying or backfilling.
 
+See: [NATS / JetStream design](./nats) and the schema surfaces in [`proto/dex/sol/v1/core.proto`](../reference/code/proto/dex/sol/v1/core).
+
 ## 4) Sink
 
 Sink services consume JetStream events and persist them:
 
-- ClickHouse tables (`cmd/sink/clickhouse`, code in `sinks/clickhouse/`)
-- Parquet batches (`cmd/sink/parquet`, code in `sinks/parquet/`)
+- ClickHouse tables ([`cmd/sink/clickhouse`](../reference/code/cmd/sink/clickhouse/main), code in [`sinks/clickhouse/`](../reference/code/sinks))
+- Parquet batches ([`cmd/sink/parquet`](../reference/code/cmd/sink/parquet/main), code in [`sinks/parquet/`](../reference/code/sinks))
 
 ## 5) Serve
 
 Serving components (HTTP APIs, caches, dashboards) read from persisted state.
 
+Start with [`api/http/main.go`](../reference/code/api/http/main).
+
+## See also
+
+- [System overview](../start-here/overview)
+- [Canonical event model](./events)
+- [NATS / JetStream design](./nats)
+- [Storage (ClickHouse + Parquet)](./storage)

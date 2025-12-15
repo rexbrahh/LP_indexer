@@ -1,0 +1,23 @@
+---
+title: "cmd/"
+---
+
+`cmd/` contains the **process entrypoints** (binaries) for the repo.
+
+## What to read first
+
+- [`cmd/ingestor/geyser/main.go`](./ingestor/geyser/main) (events enter the system)
+- [`cmd/sink/clickhouse/main.go`](./sink/clickhouse/main) (JetStream → ClickHouse)
+- [`cmd/sink/parquet/main.go`](./sink/parquet/main) (JetStream → Parquet/S3)
+- [`cmd/candles/main.go`](./candles/main) (candle materialization path)
+- [`cmd/bridge/main.go`](./bridge/main) (legacy compatibility bridge)
+
+## Related docs
+
+- [Pipeline architecture](../../../architecture/pipeline)
+- [Service: ingestor](../../../services/ingestor)
+- [Service: sinks](../../../services/sinks)
+- [Service: bridge](../../../services/bridge)
+- [Ops: local dev](../../../ops/local-dev)
+- [CLI reference](../../../reference/cli)
+

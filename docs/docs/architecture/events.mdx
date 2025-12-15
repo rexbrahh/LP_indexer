@@ -6,7 +6,11 @@ The pipeline normalizes different DEX program activity into a stable set of cano
 
 ## Source of truth: protobuf schema
 
-The canonical event schema is defined in `proto/` and generates Go/C++ bindings into `gen/`.
+The canonical event schema is defined in [`proto/`](../reference/code/proto) and generates Go/C++ bindings into `gen/` (derived output).
+
+Full walkthrough:
+
+- [`proto/dex/sol/v1/core.proto`](../reference/code/proto/dex/sol/v1/core)
 
 ```proto title="proto/dex/sol/v1/core.proto (canonical messages)" file=<rootDir>/proto/dex/sol/v1/core.proto#L7-L83 showLineNumbers
 ```
@@ -20,6 +24,8 @@ A swap event typically contains:
 - base/quote mints + decimals
 - in/out amounts and reserves
 - flags: `provisional`, `is_undo`
+
+See schema section: [`message SwapEvent`](../reference/code/proto/dex/sol/v1/core#message-swapevent).
 
 ### How to interpret key fields
 
@@ -37,6 +43,18 @@ Candles represent OHLCV aggregations for a **pair** or **pool** over a timeframe
 - totals: volume + trades
 - flags: `provisional`, `is_correction`
 
+See schema section: [`message Candle`](../reference/code/proto/dex/sol/v1/core#message-candle).
+
 ## Provisional vs finalized
 
 Some parts of the pipeline emit provisional data for low latency and later emit a “finalized” version. Sinks and consumers must define how they reconcile these states.
+
+See also:
+
+- C++ candle engine finalization behavior: [`state/candle_cpp/tests/candle_finalize_test.cpp`](../reference/code/state/candle_cpp/tests/candle_finalize_test)
+
+## See also
+
+- [Pipeline architecture](./pipeline)
+- [NATS / JetStream design](./nats)
+- [Storage (ClickHouse + Parquet)](./storage)

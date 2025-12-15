@@ -10,6 +10,11 @@ make ops.clickhouse.apply
 
 Schemas live in `ops/clickhouse/`.
 
+Annotated references:
+
+- [`ops/clickhouse/all.sql`](../reference/code/ops/clickhouse/all)
+- [`ops/clickhouse/trades.sql`](../reference/code/ops/clickhouse/trades)
+
 Current note:
 
 - `trades` is actively written by `cmd/sink/clickhouse`.
@@ -20,3 +25,10 @@ Current note:
 ```bash
 make sink-e2e
 ```
+
+Harness source: [`scripts/run_sink_e2e.sh`](../reference/code/scripts/run_sink_e2e)
+
+## See also
+
+- [Storage (ClickHouse + Parquet)](../architecture/storage)
+- [Ops: local dev](./local-dev)

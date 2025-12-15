@@ -14,6 +14,12 @@ Some scripts and bootstrapping workflows prefer applying one file rather than co
 
 This file provides a single “apply everything” schema entrypoint, while the individual `*.sql` files remain useful for focused diffs and targeted deployments.
 
+## Related docs
+
+- Architecture: [Storage (ClickHouse + Parquet)](../../../../architecture/storage)
+- Ops: [Ops: ClickHouse operations](../../../../ops/clickhouse) and schema apply script [`scripts/apply_clickhouse_schema.sh`](../../scripts/apply_clickhouse_schema)
+- Writer implementation: [`sinks/clickhouse/writer.go`](../../sinks/clickhouse/writer)
+
 ## Full source
 
 ```sql title="ops/clickhouse/all.sql" file=<rootDir>/ops/clickhouse/all.sql showLineNumbers
@@ -64,4 +70,3 @@ This file provides a single “apply everything” schema entrypoint, while the 
 **How:** Both use ReplacingMergeTree so periodic recomputation can “overwrite” prior rows by key.
 
 **Why:** These tables support dashboards and higher-level analytics beyond raw swaps and candles.
-

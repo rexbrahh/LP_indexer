@@ -26,6 +26,12 @@ Even though the current implementation returns stubbed payloads, it establishes:
 - how caching is intended to work (Redis)
 - production-grade process behavior (graceful shutdown on SIGINT/SIGTERM)
 
+## Related docs
+
+- Service overview: [Service: api](../../../../services/api)
+- Architecture: [Pipeline architecture](../../../../architecture/pipeline) and [Storage (ClickHouse + Parquet)](../../../../architecture/storage)
+- Package walkthrough: [`api/`](../../api) and response types in [`api/http/types/types.go`](./types/)
+
 ## Full source
 
 ```go title="api/http/main.go" file=<rootDir>/api/http/main.go showLineNumbers

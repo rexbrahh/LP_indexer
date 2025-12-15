@@ -20,21 +20,32 @@ ingest -> decode -> publish -> sink -> serve
 
 ## Where to start in the repo
 
-If you are new to the codebase, start with the entrypoints under `cmd/`:
+If you are new to the codebase, start with the entrypoints under [`cmd/`](../reference/code/cmd):
 
-- `cmd/ingestor/geyser/main.go` – ingestor that publishes events into JetStream.
-- `cmd/sink/clickhouse/main.go` – ClickHouse sink service.
-- `cmd/sink/parquet/main.go` – Parquet sink service.
-- `cmd/bridge/main.go` – bridge for legacy compatibility (when enabled).
+- [`cmd/ingestor/geyser/main.go`](../reference/code/cmd/ingestor/geyser/main) – ingestor that publishes events into JetStream.
+- [`cmd/sink/clickhouse/main.go`](../reference/code/cmd/sink/clickhouse/main) – ClickHouse sink service.
+- [`cmd/sink/parquet/main.go`](../reference/code/cmd/sink/parquet/main) – Parquet sink service.
+- [`cmd/bridge/main.go`](../reference/code/cmd/bridge/main) – bridge for legacy compatibility (when enabled).
 
 Then read the runtime packages in this order:
 
-1. `ingestor/` (source ingestion + normalization boundary)
-2. `decoder/` (DEX-specific decoders)
-3. `sinks/` (ClickHouse/Parquet consumers and persistence)
-4. `api/` (serving layer)
+1. [`ingestor/`](../reference/code/ingestor) (source ingestion + normalization boundary)
+2. [`decoder/`](../reference/code/decoder) (DEX-specific decoders)
+3. [`sinks/`](../reference/code/sinks) (ClickHouse/Parquet consumers and persistence)
+4. [`api/`](../reference/code/api) (serving layer)
 
 ## What “canonical” means here
 
 Downstream consumers should not need to know which DEX emitted an event. The pipeline normalizes into a stable schema (fields like `chain_id`, `slot`, `sig`, `pool_id`, amounts, decimals, flags like `provisional`/`is_undo`, and candle OHLCV).
 
+The schema source of truth is the Protobuf file:
+
+- [`proto/dex/sol/v1/core.proto`](../reference/code/proto/dex/sol/v1/core)
+
+## See also
+
+- [Pipeline architecture](../architecture/pipeline)
+- [Canonical event model](../architecture/events)
+- [NATS / JetStream design](../architecture/nats)
+- [Storage (ClickHouse + Parquet)](../architecture/storage)
+- [Quickstart (local dev)](./quickstart)

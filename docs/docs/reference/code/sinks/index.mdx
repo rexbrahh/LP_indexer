@@ -1,0 +1,26 @@
+---
+title: "sinks/"
+---
+
+`sinks/` contains long-running consumers that persist canonical events, plus shared publishing helpers.
+
+## What to read first
+
+- ClickHouse sink:
+  - [`sinks/clickhouse/service.go`](./clickhouse/service)
+  - [`sinks/clickhouse/writer.go`](./clickhouse/writer)
+- Parquet sink:
+  - [`sinks/parquet/service.go`](./parquet/service)
+  - [`sinks/parquet/writer.go`](./parquet/writer)
+- Shared JetStream publishing config:
+  - [`sinks/nats/config.go`](./nats/config)
+  - [`sinks/nats/publisher.go`](./nats/publisher)
+
+## Related docs
+
+- [Service: sinks](../../../services/sinks)
+- [NATS / JetStream design](../../../architecture/nats)
+- [Storage (ClickHouse + Parquet)](../../../architecture/storage)
+- [Ops: ClickHouse operations](../../../ops/clickhouse)
+- [Ops: NATS / JetStream operations](../../../ops/nats-jetstream)
+

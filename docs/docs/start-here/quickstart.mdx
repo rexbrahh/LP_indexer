@@ -7,7 +7,7 @@ This guide gets you from zero to “I can run the local pipeline and validate ou
 ## Prerequisites
 
 - Docker (for local NATS + ClickHouse via `make up`)
-- Go (recommended: `nix develop` provides Go 1.22)
+- Go (recommended: `nix develop` provides Go 1.24)
 - `nats` CLI (required by `make ops.jetstream.init`)
 - For `make sink-e2e`: `clickhouse-client`, `aws` CLI, and `duckdb` CLI
 
@@ -25,12 +25,14 @@ If you don’t use Nix, you can still work with system Go, but you’ll need you
 make up
 ```
 
-This uses `docker-compose.yml` in the repo root.
+This uses [`docker-compose.yml`](../reference/code/repo/docker-compose) in the repo root.
 
 Under the hood, `make up` is just a thin wrapper over Docker Compose:
 
 ```makefile title="Makefile: local infra + JetStream bootstrap" file=<rootDir>/Makefile#L115-L162 showLineNumbers
 ```
+
+Full walkthrough: [`Makefile`](../reference/code/repo/makefile)
 
 ## Step 3: initialize JetStream
 
@@ -45,6 +47,12 @@ The exact stream definition is committed in-repo:
 ```json title="ops/jetstream/streams.dex.json" file=<rootDir>/ops/jetstream/streams.dex.json showLineNumbers
 ```
 
+See also:
+
+- [Ops: NATS / JetStream operations](../ops/nats-jetstream)
+- [`ops/jetstream/streams.dex.json`](../reference/code/ops/jetstream/streams.dex)
+- [`ops/jetstream/consumer.swaps.json`](../reference/code/ops/jetstream/consumer.swaps)
+
 ## Step 4: run a service
 
 Example: start the Geyser ingestor:
@@ -53,12 +61,19 @@ Example: start the Geyser ingestor:
 make run.ingestor.geyser
 ```
 
+Entrypoint walkthrough: [`cmd/ingestor/geyser/main.go`](../reference/code/cmd/ingestor/geyser/main)
+
 In another terminal, start sinks:
 
 ```bash
 go run ./cmd/sink/clickhouse
 go run ./cmd/sink/parquet
 ```
+
+Entrypoints:
+
+- [`cmd/sink/clickhouse/main.go`](../reference/code/cmd/sink/clickhouse/main)
+- [`cmd/sink/parquet/main.go`](../reference/code/cmd/sink/parquet/main)
 
 ## Step 5: run the end-to-end harness (recommended)
 
@@ -67,6 +82,8 @@ Use the sink E2E harness (writes sample events → validates ClickHouse rows →
 ```bash
 make sink-e2e
 ```
+
+Harness source: [`scripts/run_sink_e2e.sh`](../reference/code/scripts/run_sink_e2e)
 
 The harness does three things:
 
@@ -92,3 +109,11 @@ make candle-e2e
 
 - If `make ops.jetstream.init` fails, verify the `nats` CLI is installed and `NATS_URL` is reachable.
 - If ClickHouse queries fail, confirm `make up` succeeded and the ClickHouse port is reachable.
+
+## See also
+
+- [Ops: local dev](../ops/local-dev)
+- [Storage (ClickHouse + Parquet)](../architecture/storage)
+- [Service: ingestor](../services/ingestor)
+- [Service: sinks](../services/sinks)
+- [scripts/](../reference/code/scripts)

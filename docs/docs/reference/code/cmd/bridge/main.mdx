@@ -18,6 +18,13 @@ This binary is the ops boundary for running the bridge:
 
 All “real work” (subject mapping, consumption/publishing, metrics) lives in the `bridge/` package.
 
+## Related docs
+
+- Service overview: [Service: bridge](../../../../services/bridge)
+- Architecture: [NATS / JetStream design](../../../../architecture/nats)
+- Ops mapping config: [`ops/bridge/subject_map.yaml`](../../ops/bridge/subject_map)
+- Package walkthrough: [`bridge/`](../../bridge)
+
 ## Full source
 
 ```go title="cmd/bridge/main.go" file=<rootDir>/cmd/bridge/main.go showLineNumbers

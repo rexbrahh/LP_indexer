@@ -25,6 +25,13 @@ In Go, binaries live in `package main` and are the boundary where:
 
 Keeping this file thin makes the core logic easier to unit test (in packages), and makes ops behavior explicit (what env vars matter, what shutdown looks like).
 
+## Related docs
+
+- Service overview: [Service: ingestor](../../../../../services/ingestor)
+- Architecture: [Pipeline architecture](../../../../../architecture/pipeline) and [NATS / JetStream design](../../../../../architecture/nats)
+- Schema: [`proto/dex/sol/v1/core.proto`](../../../proto/dex/sol/v1/core)
+- Package walkthrough: [`ingestor/`](../../../ingestor) and shared publisher config in [`sinks/nats/config.go`](../../../sinks/nats/config)
+
 ## Full source
 
 ```go title="cmd/ingestor/geyser/main.go" file=<rootDir>/cmd/ingestor/geyser/main.go showLineNumbers

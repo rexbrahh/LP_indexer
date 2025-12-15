@@ -9,11 +9,21 @@ make up
 make down
 ```
 
+See also:
+
+- [`docker-compose.yml`](../reference/code/repo/docker-compose)
+- [`Makefile`](../reference/code/repo/makefile)
+
 ## Seed JetStream
 
 ```bash
 make ops.jetstream.init
 ```
+
+Config source:
+
+- [`ops/jetstream/streams.dex.json`](../reference/code/ops/jetstream/streams.dex)
+- [`ops/jetstream/consumer.swaps.json`](../reference/code/ops/jetstream/consumer.swaps)
 
 ## Run E2E harnesses
 
@@ -22,3 +32,11 @@ make sink-e2e
 make candle-e2e
 ```
 
+Harness sources:
+
+- [`scripts/run_sink_e2e.sh`](../reference/code/scripts/run_sink_e2e)
+- [`scripts/run_candle_e2e.sh`](../reference/code/scripts/run_candle_e2e)
+
+## See also
+
+- [Quickstart (local dev)](../start-here/quickstart)

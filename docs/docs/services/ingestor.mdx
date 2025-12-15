@@ -6,8 +6,10 @@ The ingestor connects to a chain data source and publishes canonical events into
 
 ## Entrypoints
 
-- `cmd/ingestor/geyser/main.go`
-- `cmd/ingestor/geyser-demo/main.go`
+- [`cmd/ingestor/geyser/main.go`](../reference/code/cmd/ingestor/geyser/main)
+- [`cmd/ingestor/geyser-demo/main.go`](../reference/code/cmd/ingestor/geyser-demo/main)
+
+Package walkthrough: [`ingestor/`](../reference/code/ingestor)
 
 ## What the entrypoint does (wiring)
 
@@ -16,9 +18,17 @@ The Geyser ingestor binary is intentionally thin: it loads config from env/files
 ```go title="cmd/ingestor/geyser/main.go" file=<rootDir>/cmd/ingestor/geyser/main.go showLineNumbers
 ```
 
+Full annotated reference: [`cmd/ingestor/geyser/main.go`](../reference/code/cmd/ingestor/geyser/main)
+
 ## Primary responsibilities
 
 1. Connect to data source.
 2. Filter relevant programs/accounts.
 3. Decode or delegate decode.
 4. Publish canonical events to JetStream subjects.
+
+## See also
+
+- [Pipeline architecture](../architecture/pipeline)
+- [Canonical event model](../architecture/events)
+- [NATS / JetStream design](../architecture/nats)

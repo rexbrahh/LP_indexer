@@ -16,6 +16,12 @@ This file exists to keep the operational surface area small and explicit:
 - the process lifecycle (signals, cancellation) is defined in one place
 - the business logic (JetStream consumption, batching, ClickHouse writes) is testable in packages, not in `main`
 
+## Related docs
+
+- Service overview: [Service: sinks](../../../../../services/sinks) and [Storage (ClickHouse + Parquet)](../../../../../architecture/storage)
+- Ops: [Ops: ClickHouse operations](../../../../../ops/clickhouse) and ClickHouse schema in [`ops/clickhouse/all.sql`](../../../ops/clickhouse/all)
+- Package walkthrough: [`sinks/`](../../../sinks) and [`ops/`](../../../ops)
+
 ## Full source
 
 ```go title="cmd/sink/clickhouse/main.go" file=<rootDir>/cmd/sink/clickhouse/main.go showLineNumbers

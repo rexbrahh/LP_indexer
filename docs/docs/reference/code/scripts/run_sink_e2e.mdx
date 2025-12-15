@@ -29,6 +29,13 @@ E2E validation catches issues that unit tests won’t:
 - “finalization” semantics (provisional vs finalized, undo events)
 - operational wiring (NATS stream/consumer config)
 
+## Related docs
+
+- Guides: [Quickstart (local dev)](../../../start-here/quickstart) and [Ops: local dev](../../../ops/local-dev)
+- Architecture: [NATS / JetStream design](../../../architecture/nats) and [Storage (ClickHouse + Parquet)](../../../architecture/storage)
+- Entrypoints/tools: [`cmd/sink/clickhouse/main.go`](../cmd/sink/clickhouse/main), [`cmd/sink/parquet/main.go`](../cmd/sink/parquet/main), and [`cmd/tools/sinkreplay/main.go`](../cmd/tools/sinkreplay/main)
+- Config/schema: [`ops/jetstream/streams.dex.json`](../ops/jetstream/streams.dex) and [`ops/clickhouse/all.sql`](../ops/clickhouse/all)
+
 ## Full source
 
 ```bash title="scripts/run_sink_e2e.sh" file=<rootDir>/scripts/run_sink_e2e.sh showLineNumbers
@@ -136,4 +143,3 @@ E2E validation catches issues that unit tests won’t:
 - validates row counts and required fields (timeframe/scope/window_start) and expected unique timeframes/scopes
 
 **Why:** Parquet sink correctness is easy to get subtly wrong (schema mismatches, missing partition keys). These checks provide strong end-to-end confidence.
-

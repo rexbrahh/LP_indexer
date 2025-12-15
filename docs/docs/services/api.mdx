@@ -6,7 +6,7 @@ The API layer serves persisted data to downstream clients.
 
 ## Where code lives
 
-- `api/http/` – HTTP server and handlers
+- [`api/http/`](../reference/code/api) – HTTP server and handlers
 
 ## Current entrypoint
 
@@ -19,7 +19,14 @@ go run ./api/http
 ```go title="api/http/main.go" file=<rootDir>/api/http/main.go showLineNumbers
 ```
 
+Full annotated reference: [`api/http/main.go`](../reference/code/api/http/main)
+
 ## Typical dependencies
 
 - ClickHouse (source of truth for analytical queries)
 - Redis (hot cache / windowed data)
+
+## See also
+
+- [Storage (ClickHouse + Parquet)](../architecture/storage)
+- [Pipeline architecture](../architecture/pipeline)

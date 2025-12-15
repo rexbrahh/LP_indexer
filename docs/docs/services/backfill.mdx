@@ -6,8 +6,13 @@ Backfill tooling replays historical data through the same canonical pipeline to 
 
 ## Where code lives
 
-- `backfill/` – orchestrator + helpers
+- [`backfill/`](../reference/code/backfill) – orchestrator + helpers
 
 ## Goal
 
 Reproduce the same persisted state you would get from live ingestion, with deterministic IDs and idempotent sinks.
+
+## See also
+
+- [NATS / JetStream design](../architecture/nats)
+- [Canonical event model](../architecture/events)

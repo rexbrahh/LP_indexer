@@ -6,11 +6,21 @@ Decoders translate program-specific transactions and account updates into canoni
 
 ## Where code lives
 
-- `decoder/` – DEX-specific logic and helpers
-- `ingestor/decoder/` – integration boundary between ingestor updates and decoder output
+- [`decoder/`](../reference/code/decoder) – DEX-specific logic and helpers
+- [`ingestor/decoder/`](../reference/code/ingestor/decoder/) – integration boundary between ingestor updates and decoder output
+
+Schema contract:
+
+- [`message SwapEvent`](../reference/code/proto/dex/sol/v1/core#message-swapevent)
 
 ## Primary responsibilities
 
 - Interpret instruction data.
 - Track pool metadata needed for decoding.
 - Emit canonical swap events (and any higher-order derived data).
+
+## See also
+
+- [Canonical event model](../architecture/events)
+- [Pipeline architecture](../architecture/pipeline)
+- [Service: ingestor](./ingestor)

@@ -12,9 +12,14 @@ nix develop
 
 This should provide:
 
-- Go 1.22
+- Go 1.24
 - Clang 17 (for the C++ engines)
 - generator tools used by scripts / protobuf workflows
+
+See also:
+
+- [`flake.nix`](../reference/code/repo/flake)
+- [`shell.nix`](../reference/code/repo/shell)
 
 The repo’s “golden path” commands are summarized in `AGENTS.md`:
 
@@ -29,7 +34,17 @@ make build
 make proto-gen
 ```
 
+Full walkthroughs:
+
+- [`Makefile`](../reference/code/repo/makefile)
+- [`go.mod`](../reference/code/repo/go-mod)
+
 ## Formatting conventions
 
 - Go: `gofmt` (run `gofmt -w` on modified files)
 - Prefer explicit `context.Context` threading, early returns, and table-driven tests.
+
+## See also
+
+- [Quickstart (local dev)](./quickstart)
+- [CLI reference](../reference/cli)

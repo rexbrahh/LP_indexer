@@ -1,0 +1,17 @@
+---
+title: "api/"
+---
+
+`api/` contains the **serving layer** (HTTP handlers, caching, types) that sits on top of persisted state.
+
+## Suggested reading order
+
+1. [`api/http/main.go`](./http/main)
+2. [`api/http/types.go`](./http/types)
+3. [`api/http/cache/cache.go`](./http/cache/)
+
+## Related docs
+
+- [Pipeline architecture](../../../architecture/pipeline)
+- [Storage (ClickHouse + Parquet)](../../../architecture/storage)
+- [Service: api](../../../services/api)

@@ -6,9 +6,11 @@ Sinks consume canonical JetStream events and persist them to storage backends.
 
 ## Entrypoints
 
-- `cmd/sink/clickhouse/main.go`
-- `cmd/sink/parquet/main.go`
+- [`cmd/sink/clickhouse/main.go`](../reference/code/cmd/sink/clickhouse/main)
+- [`cmd/sink/parquet/main.go`](../reference/code/cmd/sink/parquet/main)
   - Note: the ClickHouse sink currently consumes swap/trade subjects; candle materialization is handled by `cmd/candles`.
+
+Package walkthrough: [`sinks/`](../reference/code/sinks)
 
 ## Entrypoints (wiring)
 
@@ -25,8 +27,22 @@ Both sink binaries follow the same structure:
 ```go title="cmd/sink/parquet/main.go" file=<rootDir>/cmd/sink/parquet/main.go showLineNumbers
 ```
 
+Full annotated entrypoints:
+
+- [`cmd/sink/clickhouse/main.go`](../reference/code/cmd/sink/clickhouse/main)
+- [`cmd/sink/parquet/main.go`](../reference/code/cmd/sink/parquet/main)
+- Candle materialization: [`cmd/candles/main.go`](../reference/code/cmd/candles/main)
+
 ## Validation harness
 
 ```bash
 make sink-e2e
 ```
+
+Harness source: [`scripts/run_sink_e2e.sh`](../reference/code/scripts/run_sink_e2e)
+
+## See also
+
+- [NATS / JetStream design](../architecture/nats)
+- [Storage (ClickHouse + Parquet)](../architecture/storage)
+- [Ops: ClickHouse operations](../ops/clickhouse)

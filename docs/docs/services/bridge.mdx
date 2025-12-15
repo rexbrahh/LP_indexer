@@ -6,7 +6,9 @@ The bridge exists to keep legacy consumers working while the new pipeline is rol
 
 ## Entrypoint
 
-- `cmd/bridge/main.go`
+- [`cmd/bridge/main.go`](../reference/code/cmd/bridge/main)
+
+Package walkthrough: [`bridge/`](../reference/code/bridge)
 
 ## Entrypoint (wiring)
 
@@ -15,6 +17,13 @@ The bridge binary is thin glue around the `bridge` package:
 ```go title="cmd/bridge/main.go" file=<rootDir>/cmd/bridge/main.go showLineNumbers
 ```
 
+Full annotated reference: [`cmd/bridge/main.go`](../reference/code/cmd/bridge/main)
+
 ## When to use
 
 - During cutover phases where downstream still reads legacy subjects/schemas.
+
+## See also
+
+- [NATS / JetStream design](../architecture/nats)
+- [`ops/bridge/subject_map.yaml`](../reference/code/ops/bridge/subject_map)

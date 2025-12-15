@@ -34,6 +34,13 @@ Using Protobuf gives:
 - explicit field numbering for backward-compatible evolution
 - multi-language support (Go for services, C++ for state engines)
 
+## Related docs
+
+- Conceptual model: [Canonical event model](../../../../../../architecture/events)
+- Transport: [NATS / JetStream design](../../../../../../architecture/nats) and JetStream config under [`ops/jetstream/`](../../../../ops/jetstream)
+- Storage: [Storage (ClickHouse + Parquet)](../../../../../../architecture/storage) and ClickHouse schemas under [`ops/clickhouse/`](../../../../ops/clickhouse)
+- Candle engine: [`state/candle_cpp/`](../../../../state/candle_cpp)
+
 ## Full source
 
 ```protobuf title="proto/dex/sol/v1/core.proto" file=<rootDir>/proto/dex/sol/v1/core.proto showLineNumbers

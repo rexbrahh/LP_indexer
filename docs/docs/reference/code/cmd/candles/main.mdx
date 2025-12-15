@@ -29,6 +29,13 @@ It also provides a pragmatic migration path: if candle production changes, you c
 
 In other words, this is a “materializer” for the candle stream; it is intentionally decoupled from the swap ingestion + aggregation logic.
 
+## Related docs
+
+- Architecture: [Canonical event model](../../../../architecture/events) and [Storage (ClickHouse + Parquet)](../../../../architecture/storage)
+- Schema: [`message Candle`](../../proto/dex/sol/v1/core#message-candle)
+- Ops: ClickHouse schema in [`ops/clickhouse/all.sql`](../../ops/clickhouse/all) and [Ops: ClickHouse operations](../../../../ops/clickhouse)
+- Package walkthroughs: [`sinks/clickhouse/writer.go`](../../sinks/clickhouse/writer) and [`sinks/parquet/writer.go`](../../sinks/parquet/writer)
+
 ## Full source
 
 ```go title="cmd/candles/main.go" file=<rootDir>/cmd/candles/main.go showLineNumbers

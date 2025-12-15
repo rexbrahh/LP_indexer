@@ -18,6 +18,12 @@ Streams define the persistence and routing surface of JetStream:
 
 Keeping the stream definition in version control makes the messaging contract explicit and reproducible.
 
+## Related docs
+
+- Architecture: [NATS / JetStream design](../../../../architecture/nats) and [Canonical event model](../../../../architecture/events)
+- Ops: [Ops: NATS / JetStream operations](../../../../ops/nats-jetstream)
+- Publisher implementation: [`sinks/nats/publisher.go`](../../sinks/nats/publisher)
+
 ## Full source
 
 ```json title="ops/jetstream/streams.dex.json" file=<rootDir>/ops/jetstream/streams.dex.json showLineNumbers
@@ -41,4 +47,3 @@ Keeping the stream definition in version control makes the messaging contract ex
 - `duplicate_window` defines the message deduplication window (used with Msg-Id).
 
 **Why:** A single canonical stream definition is the foundation of the ingest → decode → publish pipeline; it must be stable for consumers and sinks to work reliably.
-

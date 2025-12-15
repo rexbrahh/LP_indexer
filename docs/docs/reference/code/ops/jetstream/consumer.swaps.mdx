@@ -18,6 +18,12 @@ Consumers are where correctness and throughput meet:
 
 Having a canonical consumer config makes it easier to bootstrap and validate environments.
 
+## Related docs
+
+- Architecture: [NATS / JetStream design](../../../../architecture/nats)
+- Ops: [Ops: NATS / JetStream operations](../../../../ops/nats-jetstream)
+- ClickHouse sink consumer path: [`sinks/clickhouse/service.go`](../../sinks/clickhouse/service)
+
 ## Full source
 
 ```json title="ops/jetstream/consumer.swaps.json" file=<rootDir>/ops/jetstream/consumer.swaps.json showLineNumbers
@@ -41,4 +47,3 @@ Having a canonical consumer config makes it easier to bootstrap and validate env
 - `max_deliver`: bounds redelivery attempts
 
 **Why:** Swap events are high volume; these settings tune consumer behavior for throughput while preserving explicit ack semantics.
-

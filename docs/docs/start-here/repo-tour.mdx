@@ -15,27 +15,33 @@ The high-level module organization is captured in `AGENTS.md`:
 
 Key directories:
 
-- `cmd/` – binaries (entrypoints).
-- `ingestor/` – ingestion plumbing + the boundary where “raw chain data” becomes “decoder input.”
-- `decoder/` – program-specific decoders (Raydium, Orca Whirlpools, Meteora…).
-- `sinks/` – persistence consumers (ClickHouse, Parquet, NATS helpers).
-- `api/` – serving layer (HTTP handlers, caching).
-- `bridge/` – compatibility bridge for legacy subject/schema consumers.
-- `backfill/` – orchestrated historical backfill tooling.
+- [`cmd/`](../reference/code/cmd) – binaries (entrypoints).
+- [`ingestor/`](../reference/code/ingestor) – ingestion plumbing + the boundary where “raw chain data” becomes “decoder input.”
+- [`decoder/`](../reference/code/decoder) – program-specific decoders (Raydium, Orca Whirlpools, Meteora…).
+- [`sinks/`](../reference/code/sinks) – persistence consumers (ClickHouse, Parquet, NATS helpers).
+- [`api/`](../reference/code/api) – serving layer (HTTP handlers, caching).
+- [`bridge/`](../reference/code/bridge) – compatibility bridge for legacy subject/schema consumers.
+- [`backfill/`](../reference/code/backfill) – orchestrated historical backfill tooling.
 
 Supporting directories:
 
-- `proto/` – protobuf definitions (source of truth).
-- `gen/` – generated code (do not edit by hand).
-- `ops/` – operational configs: ClickHouse schemas, JetStream configs, subject maps.
-- `scripts/` – automation and harnesses.
-- `observability/` – dashboards/telemetry artifacts.
-- `state/` – long-running analytics engines (C++ codebases).
+- [`proto/`](../reference/code/proto) – protobuf definitions (source of truth).
+- `gen/` – generated code (do not edit by hand; see [coverage notes](../reference/coverage)).
+- [`ops/`](../reference/code/ops) – operational configs: ClickHouse schemas, JetStream configs, subject maps.
+- [`scripts/`](../reference/code/scripts) – automation and harnesses.
+- [`observability/`](../reference/code/observability) – dashboards/telemetry artifacts.
+- [`state/`](../reference/code/state) – long-running analytics engines (C++ codebases).
 
 ## Read order (suggested)
 
 1. `README.md` (how to run + high-level goals)
-2. `cmd/ingestor/geyser/main.go` (how events enter the system)
-3. `ingestor/` package(s) used by the ingestor
-4. `decoder/` packages (program-specific decoding)
-5. `sinks/` packages (persistence and batching)
+2. [`cmd/ingestor/geyser/main.go`](../reference/code/cmd/ingestor/geyser/main) (how events enter the system)
+3. [`ingestor/`](../reference/code/ingestor) package(s) used by the ingestor
+4. [`decoder/`](../reference/code/decoder) packages (program-specific decoding)
+5. [`sinks/`](../reference/code/sinks) packages (persistence and batching)
+
+## See also
+
+- [System overview](./overview)
+- [Pipeline architecture](../architecture/pipeline)
+- [Code reference](../reference/code)

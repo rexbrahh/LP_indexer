@@ -16,6 +16,12 @@ Like other binaries in this repo, this `main` keeps operational wiring separate 
 - lifecycle is handled with a cancellable context and OS signal handling
 - the long-running loop is owned by the sink service, not by this entrypoint
 
+## Related docs
+
+- Service overview: [Service: sinks](../../../../../services/sinks) and [Storage (ClickHouse + Parquet)](../../../../../architecture/storage)
+- Ops: [Ops: local dev](../../../../../ops/local-dev) and scripts under [`scripts/`](../../../scripts)
+- Package walkthrough: [`sinks/parquet/`](../../../sinks/parquet/service) (service loop) and [`sinks/parquet/writer.go`](../../../sinks/parquet/writer)
+
 ## Full source
 
 ```go title="cmd/sink/parquet/main.go" file=<rootDir>/cmd/sink/parquet/main.go showLineNumbers

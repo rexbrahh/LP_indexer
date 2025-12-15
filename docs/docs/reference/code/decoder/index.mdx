@@ -1,0 +1,27 @@
+---
+title: "decoder/"
+---
+
+`decoder/` contains the **DEX-specific decoders** that translate program activity into canonical events.
+
+## How this directory is organized
+
+- `decoder/common/`: shared utilities (fixed-point, mint metadata, base/quote determination)
+- `decoder/raydium/`: Raydium decoder implementation
+- `decoder/orca_whirlpool/`: Orca Whirlpool decoder implementation
+- `decoder/meteora/`: Meteora decoder implementation
+
+## Suggested reading order
+
+1. [`decoder/common/fixed_point.go`](./common/fixed_point)
+2. [`decoder/common/pair.go`](./common/pair)
+3. Raydium: [`decoder/raydium/parser.go`](./raydium/parser)
+4. Orca Whirlpools: [`decoder/orca_whirlpool/decoder.go`](./orca_whirlpool/decoder)
+5. Meteora: [`decoder/meteora/decoder.go`](./meteora/decoder)
+
+## Related docs
+
+- [Canonical event model](../../../architecture/events)
+- [Protobuf schema: core.proto](../proto/dex/sol/v1/core)
+- [Service: decoder](../../../services/decoder)
+
